@@ -9,16 +9,32 @@ permissions:
   contents: read
 
 jobs:
-  windows-terminal:
+  release-installer:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-      - name: Prepare runtime
-        run: uv sync
-      - name: Start API and verify terminal
+      - name: Install the public GitHub release
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\soki.ps1 --check
+        run: |
+          $env:SOKI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "SokiTrade"
+          $env:SOKI_BIN_DIR = Join-Path $env:RUNNER_TEMP "SokiBin"
+          $installer = Join-Path $env:RUNNER_TEMP "install.ps1"
+          Invoke-WebRequest `
+            -Uri "https://github.com/churchillhenry12-afk/soki-trade/releases/latest/download/install.ps1" `
+            -OutFile $installer `
+            -UseBasicParsing
+          powershell `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File $installer
+
+      - name: Start the packaged API and verify the terminal
+        shell: powershell
+        run: |
+          $env:SOKI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "SokiTrade"
+          $launcher = Join-Path $env:SOKI_INSTALL_DIR "soki.ps1"
+          powershell `
+            -NoProfile `
+            -ExecutionPolicy Bypass `
+            -File $launcher `
+            --check
