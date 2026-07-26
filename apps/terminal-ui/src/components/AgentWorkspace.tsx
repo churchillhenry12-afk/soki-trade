@@ -86,12 +86,14 @@ function ConnectionTool({
   onConnectMT5: (
     transport: "rest" | "mcp",
     endpoint: string,
+    accountMode: "DEMO" | "REAL",
     token: string,
   ) => Promise<void>;
 }) {
   const [telegramToken, setTelegramToken] = useState("");
   const [chatId, setChatId] = useState("");
   const [transport, setTransport] = useState<"rest" | "mcp">("mcp");
+  const [accountMode, setAccountMode] = useState<"DEMO" | "REAL">("DEMO");
   const [endpoint, setEndpoint] = useState("");
   const [mt5Token, setMT5Token] = useState("");
 
@@ -161,9 +163,18 @@ function ConnectionTool({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          void onConnectMT5(transport, endpoint, mt5Token);
+          void onConnectMT5(transport, endpoint, accountMode, mt5Token);
         }}
       >
+        <label>Account type
+          <select
+            value={accountMode}
+            onChange={(event) => setAccountMode(event.target.value as "DEMO" | "REAL")}
+          >
+            <option value="DEMO">Demo account</option>
+            <option value="REAL">Real account · read-only</option>
+          </select>
+        </label>
         <label>Connection type
           <select
             value={transport}
@@ -252,6 +263,7 @@ export function AgentWorkspace({
   async function connectMT5(
     transport: "rest" | "mcp",
     endpoint: string,
+    accountMode: "DEMO" | "REAL",
     token: string,
   ) {
     setToolBusy(true);
@@ -259,13 +271,14 @@ export function AgentWorkspace({
       await api.connectMT5({
         transport,
         endpoint,
+        account_mode: accountMode,
         token: token || null,
       });
       await onRefreshSetup();
       setConnectionTask(null);
       addAssistantMessage(
-        `MT5 is connected through ${transport.toUpperCase()}. The gateway passed its live ` +
-        "protocol check; live order execution remains disabled.",
+        `MT5 ${accountMode} account is connected through ${transport.toUpperCase()} in ` +
+        "read-only mode. Live order execution remains disabled.",
       );
     } catch (error) {
       addAssistantMessage(`MT5 connection failed: ${(error as Error).message}`);
@@ -358,8 +371,12 @@ export function AgentWorkspace({
               connected={Boolean(setup.telegram.inbound_ready)}
             />
             <ConnectionRow
-              name="MT5 demo"
-              detail={String(setup.mt5.endpoint || "No bridge")}
+              name="MT5"
+              detail={
+                setup.mt5.connected
+                  ? `${String(setup.mt5.account_mode)} · read-only`
+                  : String(setup.mt5.endpoint || "No bridge")
+              }
               connected={Boolean(setup.mt5.connected)}
             />
           </div>

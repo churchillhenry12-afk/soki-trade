@@ -99,6 +99,8 @@ export type LocalMT5Status = {
   application_path: string;
   gateway_connected: boolean;
   account_mode: string;
+  account_mode_source: string;
+  read_only: boolean;
   bridge_required: boolean;
 };
 

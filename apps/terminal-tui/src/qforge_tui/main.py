@@ -65,6 +65,7 @@ class TelegramSubmission:
 class MT5Submission:
     transport: Literal["rest", "mcp"]
     endpoint: str
+    account_mode: Literal["DEMO", "REAL"]
     token: str | None
 
 
@@ -391,8 +392,21 @@ class MT5Screen(FormScreen):
         transport = str(self.current.get("transport", "mcp"))
         if transport not in {"rest", "mcp"}:
             transport = "mcp"
+        account_mode = str(self.current.get("account_mode", "DEMO")).upper()
+        if account_mode not in {"DEMO", "REAL"}:
+            account_mode = "DEMO"
         with Container(classes="form-dialog"):
             yield Static("CONNECT MT5 GATEWAY", classes="form-title")
+            yield Label("Account type")
+            yield Select(
+                (
+                    ("Demo account", "DEMO"),
+                    ("Real account · read-only", "REAL"),
+                ),
+                value=account_mode,
+                allow_blank=False,
+                id="mt5-account-mode",
+            )
             yield Label("Transport")
             yield Select(
                 (("Native MT5 / MCP", "mcp"), ("REST bridge", "rest")),
@@ -414,8 +428,9 @@ class MT5Screen(FormScreen):
                 id="mt5-token",
             )
             yield Static(
-                "Connect performs a real MCP initialize or REST health check. Live account "
-                "gateways are rejected; this agent remains research and paper only.",
+                "Connect performs a real MCP initialize or REST health check. If the bridge "
+                "reports an account type, it must match your selection. Real accounts are "
+                "read-only; live order execution remains disabled.",
                 classes="form-help",
             )
             with Horizontal(classes="form-actions"):
@@ -429,6 +444,9 @@ class MT5Screen(FormScreen):
             MT5Submission(
                 transport=str(self.query_one("#mt5-transport", Select).value),  # type: ignore[arg-type]
                 endpoint=self.query_one("#mt5-url", Input).value.strip(),
+                account_mode=str(  # type: ignore[arg-type]
+                    self.query_one("#mt5-account-mode", Select).value
+                ),
                 token=token or None,
             )
         )
@@ -962,12 +980,16 @@ class SokiTradeTerminal(App[None]):
                     json={
                         "transport": submission.transport,
                         "endpoint": submission.endpoint,
+                        "account_mode": submission.account_mode,
                         "token": submission.token,
                     },
                 )
                 response.raise_for_status()
             self.query_one("#chat-log", RichLog).write(
-                self._system_text(f"MT5 {submission.transport.upper()} gateway verified.")
+                self._system_text(
+                    f"MT5 {submission.account_mode} account connected through "
+                    f"{submission.transport.upper()} in read-only mode."
+                )
             )
             await self.refresh_setup()
         except httpx.HTTPError as error:

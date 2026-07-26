@@ -73,7 +73,12 @@ export const api = {
     request<SetupConnection>("/gateways/telegram", {
       method: "DELETE",
     }),
-  connectMT5: (body: { transport: "rest" | "mcp"; endpoint: string; token: string | null }) =>
+  connectMT5: (body: {
+    transport: "rest" | "mcp";
+    endpoint: string;
+    account_mode: "DEMO" | "REAL";
+    token: string | null;
+  }) =>
     request<SetupConnection>("/gateways/mt5/connect", {
       method: "POST",
       body: JSON.stringify(body),

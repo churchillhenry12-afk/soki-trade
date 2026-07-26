@@ -219,6 +219,15 @@ beforeEach(() => {
           bot_username: "soki_bot",
         };
       }
+      if (url.endsWith("/gateways/mt5/connect")) {
+        payload = {
+          configured: true,
+          connected: true,
+          account_mode: "REAL",
+          account_mode_source: "USER_SELECTED",
+          read_only: true,
+        };
+      }
       if (url.endsWith("/models/scan")) {
         payload = {
           provider: "local",
@@ -293,6 +302,35 @@ test("scans the provider before offering available models", async () => {
   expect(fetch).toHaveBeenCalledWith(
     "http://127.0.0.1:8000/models/scan",
     expect.objectContaining({ method: "POST" }),
+  );
+});
+
+test("lets the user connect a demo or read-only real MT5 account", async () => {
+  render(<App />);
+
+  await screen.findByText("Soki Trade is ready to talk.");
+  fireEvent.change(screen.getByLabelText("Account type"), {
+    target: { value: "REAL" },
+  });
+  fireEvent.change(screen.getByLabelText("Gateway URL"), {
+    target: { value: "http://127.0.0.1:8765" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Connect MT5 bridge" }));
+
+  expect(
+    await screen.findByText("The MT5 REAL account is connected in read-only mode."),
+  ).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledWith(
+    "http://127.0.0.1:8000/gateways/mt5/connect",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        transport: "rest",
+        endpoint: "http://127.0.0.1:8765",
+        account_mode: "REAL",
+        token: null,
+      }),
+    }),
   );
 });
 
