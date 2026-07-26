@@ -1,0 +1,67 @@
+name: Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/windows-executable.yml"
+      - "apps/api/**"
+      - "apps/terminal-tui/**"
+      - "packages/shared/**"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/windows-executable.yml"
+      - "apps/api/**"
+      - "apps/terminal-tui/**"
+      - "packages/shared/**"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "uv.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Prepare build environment
+        run: |
+          uv sync
+          uv pip install "pyinstaller>=6.11,<7"
+
+      - name: Build SokiTrade.exe
+        run: uv run pyinstaller --clean --noconfirm packaging/soki-trade.spec
+
+      - name: Run packaged executable health check
+        shell: powershell
+        run: |
+          $env:SOKI_DATA_DIR = Join-Path $env:RUNNER_TEMP "SokiTradeData"
+          & .\dist\SokiTrade.exe --check
+          if ($LASTEXITCODE -ne 0) {
+            throw "SokiTrade.exe health check failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Create checksum
+        shell: powershell
+        run: |
+          $hash = (Get-FileHash .\dist\SokiTrade.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  SokiTrade.exe" | Set-Content -Encoding ascii .\dist\SokiTrade.exe.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SokiTrade-Windows
+          path: |
+            dist/SokiTrade.exe
+            dist/SokiTrade.exe.sha256
+          if-no-files-found: error

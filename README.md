@@ -26,7 +26,7 @@ This is research software, not financial advice. Live trading is disabled.
 
 ## Requirements
 
-- macOS or Linux
+- Windows, macOS, or Linux
 - Python 3.12+
 - Node.js 22+
 - [`uv`](https://docs.astral.sh/uv/)
@@ -74,6 +74,23 @@ The primary terminal experience starts the API and centered agent chat together:
 ```bash
 ./soki
 ```
+
+For Windows, the standalone executable is the simplest option. It includes its
+own Python runtime and does not need the PowerShell installer, Python, `uv`, or
+Node.js:
+
+<https://github.com/churchillhenry12-afk/soki-trade/releases/latest/download/SokiTrade.exe>
+
+Download `SokiTrade.exe` and open it, or run it from PowerShell:
+
+```powershell
+.\SokiTrade.exe
+```
+
+Agent settings, gateway credentials, market data, and the local database are
+kept under `%LOCALAPPDATA%\SokiTrade`. The executable selects a free private
+localhost port automatically, so an existing application on port 8000 cannot
+prevent it from starting.
 
 For a fresh Windows machine, run this in PowerShell:
 

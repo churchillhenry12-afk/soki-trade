@@ -45,7 +45,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = ["packages/shared/src", "apps/api/src"]
+mypy_path = ["packages/shared/src", "apps/api/src", "apps/terminal-tui/src"]
 plugins = ["pydantic.mypy"]
 exclude = ["infrastructure/migrations"]
 
