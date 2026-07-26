@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "defaults": {
+    "shell_access": false,
+    "may_override_risk": false,
+    "audit_logging": true
+  },
+  "agents": [
+    {"id": "RESEARCH_DIRECTOR", "tools": ["experiment.create"], "timeout_seconds": 30, "retries": 2},
+    {"id": "STRATEGY_BUILDER", "tools": ["strategy.validate"], "timeout_seconds": 30, "retries": 2},
+    {"id": "BACKTESTER", "tools": ["backtest.run"], "timeout_seconds": 300, "retries": 1},
+    {"id": "CRITIC", "tools": ["backtest.read"], "timeout_seconds": 60, "retries": 2},
+    {"id": "ADVERSARY", "tools": ["stress.run"], "timeout_seconds": 180, "retries": 1},
+    {"id": "STATISTICIAN", "tools": ["statistics.run"], "timeout_seconds": 300, "retries": 1},
+    {"id": "OPTIMIZER", "tools": ["optimizer.run"], "timeout_seconds": 300, "retries": 1},
+    {"id": "QUANTUM_OPTIMIZER", "tools": ["quantum.run"], "timeout_seconds": 300, "retries": 1},
+    {"id": "RISK_GOVERNOR", "tools": ["risk.review"], "timeout_seconds": 30, "retries": 0},
+    {"id": "DEPLOYMENT_CONTROLLER", "tools": ["deployment.export", "mt5.demo_order"], "timeout_seconds": 30, "retries": 0, "may_access_mt5_orders": true},
+    {"id": "REPORTER", "tools": ["report.render"], "timeout_seconds": 60, "retries": 1},
+    {"id": "MEMORY", "tools": ["memory.write"], "timeout_seconds": 30, "retries": 2}
+  ]
+}
+

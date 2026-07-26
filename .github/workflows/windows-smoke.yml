@@ -1,0 +1,24 @@
+name: Windows installer smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-terminal:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Prepare runtime
+        run: uv sync
+      - name: Start API and verify terminal
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\soki.ps1 --check

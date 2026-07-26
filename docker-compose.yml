@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: qforge
+      POSTGRES_USER: qforge
+      POSTGRES_PASSWORD: local-development-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qforge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - qforge-postgres:/var/lib/postgresql/data
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - qforge-redis:/data
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    environment:
+      QFORGE_DATABASE_URL: postgresql+psycopg://qforge:local-development-only@postgres/qforge
+      QFORGE_CORS_ORIGINS: http://127.0.0.1:5173,http://localhost:5173
+      QFORGE_DEMO_MODE: "true"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/api.Dockerfile
+    command:
+      [
+        "uv",
+        "run",
+        "celery",
+        "-A",
+        "qforge_worker.main:worker",
+        "worker",
+        "--loglevel=INFO"
+      ]
+    environment:
+      QFORGE_DATABASE_URL: postgresql+psycopg://qforge:local-development-only@postgres/qforge
+      QFORGE_REDIS_URL: redis://redis:6379/0
+      PYTHONPATH: packages/shared/src:apps/worker/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  terminal-ui:
+    build:
+      context: apps/terminal-ui
+      dockerfile: ../../infrastructure/docker/ui.Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  qforge-postgres:
+  qforge-redis:
+
