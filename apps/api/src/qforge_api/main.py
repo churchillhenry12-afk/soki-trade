@@ -21,6 +21,7 @@ from qforge.database import Approvals, Repository
 from qforge.gateways import (
     GatewayConnectionError,
     GatewayManager,
+    MT5AccountMode,
     MT5Connection,
     MT5Transport,
     TelegramConnection,
@@ -147,6 +148,7 @@ class TelegramGatewayRequest(BaseModel):
 class MT5GatewayRequest(BaseModel):
     transport: MT5Transport
     endpoint: str = Field(min_length=8, max_length=500)
+    account_mode: MT5AccountMode
     token: SecretStr | None = None
 
 
@@ -656,6 +658,7 @@ async def connect_mt5(request: MT5GatewayRequest) -> dict[str, str | bool]:
             MT5Connection(
                 transport=request.transport,
                 endpoint=request.endpoint,
+                account_mode=request.account_mode,
                 token=request.token.get_secret_value() if request.token else "",
             )
         )
@@ -703,25 +706,30 @@ def _connection_status_response(
     if include_mt5:
         mt5 = gateways["mt5"]
         if mt5["connected"]:
+            verification = (
+                "verified by the bridge"
+                if mt5.get("account_mode_source") == "BRIDGE_VERIFIED"
+                else "selected during setup"
+            )
             parts.append(
                 f"MT5 is connected through {str(mt5['transport']).upper()} "
-                f"({mt5['account_mode']} account)."
+                f"({mt5['account_mode']} account, {verification}, read-only)."
             )
         else:
             local_terminal = _local_mt5_terminal()
             if local_terminal is not None:
                 parts.append(
                     f"MT5 is not connected, although the terminal is installed at "
-                    f"{local_terminal}. Log into a DEMO account, start a compatible REST "
-                    "or MCP bridge, then use Connect MT5 to enter its endpoint and token. "
-                    "Soki will only save the connection after the bridge verifies "
-                    "account_mode=DEMO."
+                    f"{local_terminal}. Log into the intended Demo or Real account, start "
+                    "a compatible REST or MCP bridge, then use Connect MT5 to select the "
+                    "account type and enter its endpoint and token. Real accounts remain "
+                    "read-only."
                 )
             else:
                 parts.append(
                     "MT5 is not connected and no local terminal was detected. Install "
-                    "MetaTrader 5, log into a DEMO account, start a compatible REST or MCP "
-                    "bridge, then use Connect MT5 to enter its endpoint and token."
+                    "MetaTrader 5, log into a Demo or Real account, start a compatible REST "
+                    "or MCP bridge, then use Connect MT5 to select the matching account type."
                 )
     if include_telegram and include_mt5:
         model = _model_router().status()
@@ -1059,6 +1067,8 @@ async def local_mt5_status() -> dict[str, str | bool]:
         "application_path": str(application_path) if application_path is not None else "",
         "gateway_connected": bool(gateway["connected"]),
         "account_mode": str(gateway["account_mode"]),
+        "account_mode_source": str(gateway["account_mode_source"]),
+        "read_only": bool(gateway["read_only"]),
         "bridge_required": not bool(gateway["connected"]),
     }
 

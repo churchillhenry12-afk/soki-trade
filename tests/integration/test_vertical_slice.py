@@ -330,6 +330,52 @@ def test_setup_status_does_not_return_gateway_secrets(tmp_path: Path, monkeypatc
         assert local_mt5.json()["gateway_connected"] is True
 
 
+def test_mt5_api_requires_and_forwards_selected_account_mode(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QFORGE_DATABASE_URL", f"sqlite:///{tmp_path / 'qforge-mt5-mode.db'}")
+    monkeypatch.setenv("QFORGE_GATEWAY_CONFIG_PATH", str(tmp_path / "gateways.json"))
+    monkeypatch.setenv("QFORGE_DEMO_MODE", "true")
+    captured: dict[str, str] = {}
+
+    async def connect_mt5(connection) -> dict[str, str | bool]:  # type: ignore[no-untyped-def]
+        captured["account_mode"] = connection.account_mode
+        return {
+            "configured": True,
+            "connected": True,
+            "account_mode": connection.account_mode,
+            "account_mode_source": "USER_SELECTED",
+            "read_only": True,
+        }
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state.gateways, "connect_mt5", connect_mt5)
+        response = client.post(
+            "/gateways/mt5/connect",
+            json={
+                "transport": "rest",
+                "endpoint": "http://127.0.0.1:8765",
+                "account_mode": "REAL",
+                "token": None,
+            },
+        )
+        missing_mode = client.post(
+            "/gateways/mt5/connect",
+            json={
+                "transport": "rest",
+                "endpoint": "http://127.0.0.1:8765",
+                "token": None,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["account_mode"] == "REAL"
+    assert response.json()["read_only"] is True
+    assert captured["account_mode"] == "REAL"
+    assert missing_mode.status_code == 422
+
+
 def test_verified_hosted_ui_can_preflight_local_api(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("QFORGE_DATABASE_URL", f"sqlite:///{tmp_path / 'qforge-cors.db'}")
     monkeypatch.setenv("QFORGE_PROVIDER_CONFIG_PATH", str(tmp_path / "provider.json"))

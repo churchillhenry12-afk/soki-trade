@@ -30,6 +30,9 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
   const [telegramToken, setTelegramToken] = useState("");
   const [telegramChat, setTelegramChat] = useState("");
   const [mt5Transport, setMT5Transport] = useState<"rest" | "mcp">("rest");
+  const [mt5AccountMode, setMT5AccountMode] = useState<"DEMO" | "REAL">(
+    setup.mt5.account_mode === "REAL" ? "REAL" : "DEMO",
+  );
   const [mt5Endpoint, setMT5Endpoint] = useState("");
   const [mt5Token, setMT5Token] = useState("");
   const [busy, setBusy] = useState("");
@@ -117,10 +120,13 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
       await api.connectMT5({
         transport: mt5Transport,
         endpoint: mt5Endpoint,
+        account_mode: mt5AccountMode,
         token: mt5Token || null,
       });
       await onRefresh();
-      setNotice("The MT5 bridge answered its live health check.");
+      setNotice(
+        `The MT5 ${mt5AccountMode} account is connected in read-only mode.`,
+      );
       setMT5Token("");
     } catch (error) {
       setNotice(`MT5 connection failed: ${(error as Error).message}`);
@@ -272,10 +278,21 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
           <article className="setup-card">
             <div className="setup-card__heading">
               <span className="step-number">4</span>
-              <div><h2>MT5 bridge</h2><p>Remote Windows demo terminal via REST or MCP.</p></div>
+              <div><h2>MT5 bridge</h2><p>Demo or read-only Real account via REST or MCP.</p></div>
               <StatePill connected={Boolean(setup.mt5.connected)} />
             </div>
             <form className="connection-form" onSubmit={(event) => void connectMT5(event)}>
+              <label>Account type
+                <select
+                  value={mt5AccountMode}
+                  onChange={(event) =>
+                    setMT5AccountMode(event.target.value as "DEMO" | "REAL")
+                  }
+                >
+                  <option value="DEMO">Demo account</option>
+                  <option value="REAL">Real account · read-only</option>
+                </select>
+              </label>
               <label>Transport
                 <select
                   value={mt5Transport}
@@ -305,7 +322,10 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
                 {busy === "mt5" ? "Checking bridge…" : "Connect MT5 bridge"}
               </button>
             </form>
-            <p className="inline-warning">Live MT5 accounts are rejected. A demo bridge is required.</p>
+            <p className="inline-warning">
+              The bridge-reported account type must match your selection. Real accounts are
+              read-only and live order execution remains disabled.
+            </p>
           </article>
         </section>
 

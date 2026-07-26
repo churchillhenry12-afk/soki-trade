@@ -147,7 +147,10 @@ the official terminal. `/mt5-login` can launch an installed terminal with a
 demo or investor account; its temporary password file is owner-only and deleted
 after launch. Automated trading is forced off. An installed terminal is
 detected separately from an MT5 bridge: account data requires a compatible
-REST/MCP endpoint, token, and a bridge-reported DEMO account.
+REST/MCP endpoint and optional token. Connection setup asks you to select Demo
+or Real. If the bridge reports its account type, it must match that selection;
+bridges without an account-mode field use the explicit selection and are marked
+accordingly. Both account types remain read-only.
 
 ## Optional explicit demo
 
@@ -236,7 +239,7 @@ external agent or broker.
 
 ## Next milestone
 
-Deploy the Windows-side MT5 demo bridge behind the verified REST/MCP connector,
+Deploy the Windows-side MT5 bridge behind the verified REST/MCP connector,
 then add read-only account reconciliation. Connect the actual Hermes repository
 through `HermesAdapter` and move the orchestrator to durable Celery tasks backed
 by PostgreSQL/Redis.

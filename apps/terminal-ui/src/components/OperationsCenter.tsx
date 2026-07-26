@@ -692,7 +692,7 @@ export function OperationsCenter({
       <SectionHeader
         eyebrow="Connections"
         title="Installed software is not the same as a verified gateway"
-        detail="Soki reports the local MT5 terminal, provider, Telegram bot, and remote demo bridge separately so nothing looks connected until it passes a real check."
+        detail="Soki reports the local MT5 terminal, provider, Telegram bot, and remote bridge separately. Demo and Real account connections remain read-only."
         action={<button onClick={onManageSetup}>Manage credentials</button>}
       />
       <div className="ops-grid ops-grid--connections">
@@ -707,7 +707,7 @@ export function OperationsCenter({
             <strong>{inventory.localMT5?.application_path || "No local application detected"}</strong>
             <p>
               The macOS application runs through Wine. Account and position data still require a
-              demo-only REST or MCP bridge; the application bundle alone does not expose a safe API.
+              REST or MCP bridge; the application bundle alone does not expose a safe API.
             </p>
             <dl>
               <div><dt>Platform</dt><dd>{inventory.localMT5?.platform ?? "unknown"}</dd></div>
@@ -718,13 +718,21 @@ export function OperationsCenter({
         </article>
         <article className="ops-card">
           <div className="ops-card__heading">
-            <div><span>MT5 SAFETY</span><h2>Demo bridge verification</h2></div>
+            <div><span>MT5 SAFETY</span><h2>Account and bridge verification</h2></div>
           </div>
           <div className="ops-status-list ops-status-list--checks">
             {[
               ["Terminal installed", Boolean(inventory.localMT5?.installed), "Local application detection"],
               ["Gateway protocol", Boolean(setup.mt5.connected), String(setup.mt5.transport || "REST or MCP")],
-              ["Demo account", setup.mt5.account_mode === "DEMO", String(setup.mt5.account_mode || "Unverified")],
+              [
+                "Account type",
+                ["DEMO", "REAL"].includes(String(setup.mt5.account_mode)),
+                `${String(setup.mt5.account_mode || "Unverified")} · ${
+                  setup.mt5.account_mode_source === "BRIDGE_VERIFIED"
+                    ? "bridge verified"
+                    : "selected in setup"
+                }`,
+              ],
               ["Order access", Boolean(inventory.mt5?.order_access), "Must remain off in this release"],
             ].map(([label, ready, detail]) => (
               <div key={String(label)}>

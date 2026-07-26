@@ -24,7 +24,8 @@ Governor rules are immutable frozen values and have no override API.
 
 The future bridge requires TLS at the ingress, token authentication, timestamped
 HMAC requests with nonces, IP allowlisting, rate limiting, idempotency keys,
-demo-account validation, and append-only audit logs. Live accounts are rejected
+account-mode validation, and append-only audit logs. Demo and Real gateways may
+provide read-only account data; live order methods remain absent and blocked
 before adapter dispatch.
 
 ## Operational controls
@@ -41,4 +42,3 @@ secrets must be injected by a secret manager; `.env` files are ignored.
 - Event spoofing is prevented by server-generated sequence numbers.
 - A mock integration cannot be mistaken for a verified real integration:
   status responses include `adapter_kind` and `verified`.
-

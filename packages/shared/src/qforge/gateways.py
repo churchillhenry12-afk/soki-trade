@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 import httpx
 
 MT5Transport = Literal["rest", "mcp"]
+MT5AccountMode = Literal["DEMO", "REAL"]
 
 
 class GatewayConnectionError(RuntimeError):
@@ -25,6 +26,7 @@ class TelegramConnection:
 class MT5Connection:
     transport: MT5Transport
     endpoint: str
+    account_mode: MT5AccountMode
     token: str = ""
 
 
@@ -53,6 +55,10 @@ class GatewayManager:
                 "transport": str(mt5.get("transport", "rest")),
                 "endpoint": str(mt5.get("endpoint", "")),
                 "account_mode": str(mt5.get("account_mode", "UNKNOWN")),
+                "account_mode_source": str(
+                    mt5.get("account_mode_source", "UNVERIFIED")
+                ),
+                "read_only": bool(mt5.get("read_only", True)),
                 "last_error": str(mt5.get("last_error", "")),
             },
         }
@@ -143,6 +149,9 @@ class GatewayManager:
         endpoint = connection.endpoint.strip().rstrip("/")
         if not endpoint.startswith(("http://", "https://")):
             raise ValueError("MT5 gateway URL must start with http:// or https://")
+        selected_mode = str(connection.account_mode).strip().upper()
+        if selected_mode not in {"DEMO", "REAL"}:
+            raise ValueError("Select whether the MT5 account is DEMO or REAL")
         headers = {"authorization": f"Bearer {connection.token}"} if connection.token else {}
         try:
             async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
@@ -169,15 +178,22 @@ class GatewayManager:
                     response = await client.get(f"{endpoint}/health", headers=headers)
                 response.raise_for_status()
                 body = self._response_object(response)
-                account_mode = str(
-                    body.get("account_mode")
-                    or body.get("mode")
-                    or body.get("result", {}).get("account_mode", "UNKNOWN")
-                ).upper()
-                if account_mode != "DEMO":
+                reported_mode = self._reported_account_mode(body)
+                if reported_mode in {"DEMO", "REAL"} and reported_mode != selected_mode:
                     raise ValueError(
-                        "MT5 bridge must verify account_mode=DEMO before it can connect"
+                        f"MT5 bridge reports a {reported_mode} account, but {selected_mode} "
+                        "was selected. Choose the matching account type and retry."
                     )
+                account_mode = (
+                    cast(MT5AccountMode, reported_mode)
+                    if reported_mode in {"DEMO", "REAL"}
+                    else cast(MT5AccountMode, selected_mode)
+                )
+                account_mode_source = (
+                    "BRIDGE_VERIFIED"
+                    if reported_mode in {"DEMO", "REAL"}
+                    else "USER_SELECTED"
+                )
         except httpx.HTTPError as error:
             safe_error = f"MT5 bridge network check failed ({type(error).__name__})"
             self.payload["mt5"] = {
@@ -185,6 +201,9 @@ class GatewayManager:
                 "endpoint": endpoint,
                 "token": "",
                 "connected": False,
+                "account_mode": selected_mode,
+                "account_mode_source": "UNVERIFIED",
+                "read_only": True,
                 "last_error": safe_error,
             }
             self._save()
@@ -196,6 +215,9 @@ class GatewayManager:
                 "endpoint": endpoint,
                 "token": "",
                 "connected": False,
+                "account_mode": selected_mode,
+                "account_mode_source": "UNVERIFIED",
+                "read_only": True,
                 "last_error": safe_error,
             }
             self._save()
@@ -206,6 +228,8 @@ class GatewayManager:
             "token": connection.token,
             "connected": True,
             "account_mode": account_mode,
+            "account_mode_source": account_mode_source,
+            "read_only": True,
             "last_error": "",
         }
         self._save()
@@ -218,6 +242,49 @@ class GatewayManager:
             return {}
         body = response.json()
         return cast(dict[str, Any], body) if isinstance(body, dict) else {}
+
+    @classmethod
+    def _reported_account_mode(cls, body: dict[str, Any]) -> str:
+        result = body.get("result")
+        result_object = cast(dict[str, Any], result) if isinstance(result, dict) else {}
+        candidates: list[Any] = [
+            body.get("account_mode"),
+            body.get("mode"),
+            body.get("trade_mode"),
+            result_object.get("account_mode"),
+            result_object.get("mode"),
+            result_object.get("trade_mode"),
+        ]
+        for container in (
+            body.get("account"),
+            body.get("account_info"),
+            result_object.get("account"),
+            result_object.get("account_info"),
+        ):
+            if isinstance(container, dict):
+                candidates.extend(
+                    (
+                        container.get("account_mode"),
+                        container.get("mode"),
+                        container.get("trade_mode"),
+                    )
+                )
+        for value in candidates:
+            normalized = cls._normalize_account_mode(value)
+            if normalized != "UNKNOWN":
+                return normalized
+        return "UNKNOWN"
+
+    @staticmethod
+    def _normalize_account_mode(value: Any) -> str:
+        if isinstance(value, bool) or value is None:
+            return "UNKNOWN"
+        normalized = str(value).strip().upper()
+        if normalized in {"0", "DEMO", "PAPER"}:
+            return "DEMO"
+        if normalized in {"2", "REAL", "LIVE"}:
+            return "REAL"
+        return "UNKNOWN"
 
     def _load(self) -> dict[str, Any]:
         if not self.config_path.exists():

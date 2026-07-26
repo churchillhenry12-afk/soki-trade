@@ -33,7 +33,7 @@ Verified locally on 2026-07-26.
 - Market data: ready with validated cache support
 - MetaTrader 5 application: installed and detected
 - MT5 account gateway: not connected; requires a compatible REST/MCP bridge,
-  endpoint, token, and bridge-reported DEMO account
+  selected Demo or read-only Real account type, endpoint, and optional token
 - Telegram: not configured; requires a bot token and allowed chat ID
 - Live orders: disabled
 
