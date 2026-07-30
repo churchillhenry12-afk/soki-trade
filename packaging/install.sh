@@ -117,12 +117,19 @@ npm_command="$(find_executable npm \
     echo "The bundled runtime could not provide Node.js/npm." >&2
     exit 1
   }
-hermes_command="$(find_executable hermes \
+hermes_command=""
+for candidate in \
   "$hermes_directory/venv/bin/hermes" \
-  "$hermes_home/bin/hermes")" || {
+  "$hermes_home/bin/hermes"; do
+  if [[ -x "$candidate" ]]; then
+    hermes_command="$candidate"
+    break
+  fi
+done
+if [[ -z "$hermes_command" ]]; then
     echo "The bundled Hermes executable was not found." >&2
     exit 1
-  }
+fi
 
 (
   cd "$soki_app_directory"

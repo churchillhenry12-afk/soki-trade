@@ -179,11 +179,13 @@ try {
         throw "The bundled runtime could not provide Node.js/npm."
     }
 
-    $hermesCommand = Find-SokiCommand -Name "hermes.exe" -Candidates @(
+    $hermesCommand = @(
         (Join-Path $hermesDirectory "venv\Scripts\hermes.exe"),
         (Join-Path $hermesDirectory ".venv\Scripts\hermes.exe"),
         (Join-Path $hermesHome "bin\hermes.exe")
-    )
+    ) |
+        Where-Object { Test-Path $_ -PathType Leaf } |
+        Select-Object -First 1
     if (-not $hermesCommand) {
         $hermesCommand = Get-ChildItem `
             -Path $hermesDirectory `
