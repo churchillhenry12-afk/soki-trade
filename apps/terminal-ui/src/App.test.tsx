@@ -248,16 +248,16 @@ beforeEach(() => {
 test("starts with honest connection setup and opens the agent chat", async () => {
   render(<App />);
 
-  expect(await screen.findByText("Soki Trade is ready to talk.")).toBeInTheDocument();
+  expect(await screen.findByText("Soky Code is ready to work.")).toBeInTheDocument();
   expect(screen.getByText("Market data")).toBeInTheDocument();
   expect(screen.getAllByText("Not connected")).toHaveLength(2);
 
-  fireEvent.click(screen.getByRole("button", { name: /Open Soki Trade/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Open Soky Code/ }));
 
   await waitFor(() => {
-    expect(screen.getByPlaceholderText("Message Soki Trade…")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Give Soky Code a task…")).toBeInTheDocument();
   });
-  expect(screen.getByText("What can I take care of?")).toBeInTheDocument();
+  expect(screen.getByText("What outcome do you need?")).toBeInTheDocument();
   expect(screen.queryByText("DASHBOARD")).not.toBeInTheDocument();
 });
 
@@ -267,7 +267,7 @@ test("shows the verified terminal installer when the local agent is offline", as
   render(<App />);
 
   expect(
-    await screen.findByText("Connect this interface to your Soki agent"),
+    await screen.findByText("Connect this interface to your Soky agent"),
   ).toBeInTheDocument();
   expect(
     screen.getByText(
@@ -292,7 +292,7 @@ test("shows the verified terminal installer when the local agent is offline", as
 test("scans the provider before offering available models", async () => {
   render(<App />);
 
-  await screen.findByText("Soki Trade is ready to talk.");
+  await screen.findByText("Soky Code is ready to work.");
   fireEvent.click(screen.getByRole("button", { name: "Scan available models" }));
 
   expect(await screen.findByText("qwen3:8b")).toBeInTheDocument();
@@ -308,7 +308,7 @@ test("scans the provider before offering available models", async () => {
 test("lets the user connect a demo or read-only real MT5 account", async () => {
   render(<App />);
 
-  await screen.findByText("Soki Trade is ready to talk.");
+  await screen.findByText("Soky Code is ready to work.");
   fireEvent.change(screen.getByLabelText("Account type"), {
     target: { value: "REAL" },
   });
@@ -337,8 +337,8 @@ test("lets the user connect a demo or read-only real MT5 account", async () => {
 test("opens a real Telegram connection tool inside agent chat", async () => {
   render(<App />);
 
-  await screen.findByText("Soki Trade is ready to talk.");
-  fireEvent.click(screen.getByRole("button", { name: /Open Soki Trade/ }));
+  await screen.findByText("Soky Code is ready to work.");
+  fireEvent.click(screen.getByRole("button", { name: /Open Soky Code/ }));
   fireEvent.click(await screen.findByRole("button", { name: "Connect Telegram" }));
 
   expect(await screen.findByText("connect Telegram", { selector: "strong" })).toBeInTheDocument();
@@ -347,7 +347,7 @@ test("opens a real Telegram connection tool inside agent chat", async () => {
   fireEvent.change(screen.getByPlaceholderText("Token from @BotFather"), {
     target: { value: "123456:test-token" },
   });
-  fireEvent.change(screen.getByPlaceholderText("Only this chat can control Soki"), {
+  fireEvent.change(screen.getByPlaceholderText("Only this chat can control Soky"), {
     target: { value: "12345" },
   });
   fireEvent.click(within(telegramTool).getByRole("button", { name: "Connect Telegram" }));
@@ -358,8 +358,8 @@ test("opens a real Telegram connection tool inside agent chat", async () => {
 test("every product section opens with real API-backed content", async () => {
   render(<App />);
 
-  await screen.findByText("Soki Trade is ready to talk.");
-  fireEvent.click(screen.getByRole("button", { name: /Open Soki Trade/ }));
+  await screen.findByText("Soky Code is ready to work.");
+  fireEvent.click(screen.getByRole("button", { name: /Open Soky Code/ }));
 
   fireEvent.click(await screen.findByRole("button", { name: "F1 Overview" }));
   expect(await screen.findByText("One agent. Every control surface.")).toBeInTheDocument();

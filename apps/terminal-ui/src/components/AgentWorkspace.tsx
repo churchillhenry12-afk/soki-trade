@@ -22,7 +22,7 @@ const WELCOME: DisplayMessage = {
   id: "welcome",
   role: "assistant",
   content:
-    "I’m online. I can answer general questions, manage your connected services, and run trading research. Try “connect Telegram”, “connect MT5”, or tell me what you need.",
+    "I’m online. Give me an outcome—not just a question. I’ll define success, do the work, and show you the proof.",
 };
 
 const PRODUCT_NAV: Array<{ id: ProductSection; label: string; key: string }> = [
@@ -118,7 +118,7 @@ function ConnectionTool({
       <article className="chat-tool" aria-label="Connect Telegram">
         <div className="chat-tool__signal"><i /><span>Connection tool</span></div>
         <div className="chat-tool__heading">
-          <div><strong>Connect Telegram</strong><p>Soki validates the bot and sends a test.</p></div>
+          <div><strong>Connect Telegram</strong><p>Soky validates the bot and sends a test.</p></div>
           <em>Bot API</em>
         </div>
         <form
@@ -140,7 +140,7 @@ function ConnectionTool({
             <input
               value={chatId}
               onChange={(event) => setChatId(event.target.value)}
-              placeholder="Only this chat can control Soki"
+              placeholder="Only this chat can control Soky"
               required
             />
           </label>
@@ -328,13 +328,13 @@ export function AgentWorkspace({
       <header className="agent-header">
         <div className="agent-identity">
           <span className="agent-avatar"><b>S</b><i /></span>
-          <div><strong>SOKI TRADE</strong><small>Agentic operations · trading intelligence</small></div>
+          <div><strong>SOKY CODE</strong><small>Evidence-first operating agent</small></div>
         </div>
         <div className="agent-presence"><i /> Online · {setup.model.model}</div>
         <button className="quiet-button" onClick={onManageSetup}>Connections & model</button>
       </header>
 
-      <nav className="product-nav" aria-label="Soki Trade sections">
+      <nav className="product-nav" aria-label="Soky Code sections">
         {PRODUCT_NAV.map((item) => (
           <button
             className={activeSection === item.id ? "is-active" : ""}
@@ -353,12 +353,16 @@ export function AgentWorkspace({
           <div>
             <div className="rail-title">
               <span className="rail-label">Connections</span>
-              <button onClick={() => void send("Show connection status")}>Ask Soki</button>
+              <button onClick={() => void send("Show connection status")}>Ask Soky</button>
             </div>
             <ConnectionRow
               name="Intelligence"
-              detail={`${setup.model.provider} · ${setup.model.model}`}
-              connected={setup.model.connected}
+              detail={
+                setup.hermes?.verified
+                  ? "Hermes runtime · verified"
+                  : `${setup.model.provider} · ${setup.model.model}`
+              }
+              connected={Boolean(setup.hermes?.verified) || setup.model.connected}
             />
             <ConnectionRow
               name="Market data"
@@ -382,15 +386,15 @@ export function AgentWorkspace({
           </div>
           <div className="rail-safety">
             <span>Agent boundary</span>
-            <strong>General agent · safe execution</strong>
-            <p>Soki can manage connections and handle normal tasks. Trading stays research/PAPER.</p>
+            <strong>Proof before completion</strong>
+            <p>Soky records success checks and evidence. Trading stays research/PAPER.</p>
           </div>
         </aside>
 
         <section className="conversation">
           <div className="conversation-heading">
-            <div><span>Soki workspace</span><h1>What can I take care of?</h1></div>
-            <span className="session-state">Tool-aware agent</span>
+            <div><span>Soky workspace</span><h1>What outcome do you need?</h1></div>
+            <span className="session-state">Proof Loop active</span>
           </div>
           <div className="message-list" aria-live="polite" ref={messageListRef}>
             {messages.map((message) => (
@@ -403,7 +407,7 @@ export function AgentWorkspace({
               <article className="message message--assistant message--working">
                 <span>S</span>
                 <div className="working-card">
-                  <div><strong>Soki is working</strong><small>Understanding your request and checking tools</small></div>
+                  <div><strong>Soky is working</strong><small>Defining success · executing · verifying</small></div>
                   <i /><i /><i />
                 </div>
               </article>
@@ -433,7 +437,7 @@ export function AgentWorkspace({
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Message Soki Trade…"
+              placeholder="Give Soky Code a task…"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -448,9 +452,30 @@ export function AgentWorkspace({
 
         <aside className="activity-drawer">
           <div className="activity-heading">
-            <span>Current work</span>
-            <em className={`run-state run-state--${state.toLowerCase()}`}>{state}</em>
+            <span>Proof ledger</span>
+            <em className={`run-state run-state--${(qforge.lastProof?.status ?? state).toLowerCase()}`}>
+              {qforge.lastProof?.status ?? state}
+            </em>
           </div>
+          {qforge.lastProof ? (
+            <section className="proof-ledger" aria-label="Latest task proof">
+              <small>Task {qforge.lastProof.task_id.slice(0, 8)} · {qforge.lastProof.runtime}</small>
+              <strong>{qforge.lastProof.request}</strong>
+              <div>
+                {qforge.lastProof.checks.map((check) => (
+                  <article key={check.key} className={`proof-check proof-check--${check.status.toLowerCase()}`}>
+                    <i>{check.status === "VERIFIED" ? "✓" : check.status === "FAILED" ? "!" : "·"}</i>
+                    <span><b>{check.label}</b><small>{check.evidence || check.status.toLowerCase()}</small></span>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : (
+            <div className="proof-empty">
+              <strong>No completion contract yet</strong>
+              <p>Your next request will appear here with live success checks.</p>
+            </div>
+          )}
           {!qforge.experiment ? (
             <div className="activity-empty">
               <strong>No active research run</strong>

@@ -1,0 +1,36 @@
+name: Cross-platform source
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terminal-launcher:
+    name: Terminal launcher (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync
+
+      - name: Verify Windows launcher
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\soki.ps1 --check
+
+      - name: Verify macOS launcher
+        if: runner.os == 'macOS'
+        shell: bash
+        run: ./soki terminal --check

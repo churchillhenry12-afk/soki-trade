@@ -20,6 +20,27 @@ class Mode(StrEnum):
     LIVE_DISABLED = "LIVE_DISABLED"
 
 
+class AttachmentKind(StrEnum):
+    IMAGE = "IMAGE"
+    VIDEO = "VIDEO"
+    AUDIO = "AUDIO"
+    DOCUMENT = "DOCUMENT"
+    ARCHIVE = "ARCHIVE"
+    OTHER = "OTHER"
+
+
+class Attachment(BaseModel):
+    attachment_id: UUID = Field(default_factory=uuid4)
+    owner: str = Field(min_length=1, max_length=120)
+    name: str = Field(min_length=1, max_length=240)
+    media_type: str = Field(min_length=1, max_length=160)
+    kind: AttachmentKind
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    storage_path: str = Field(min_length=1, max_length=1000)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class ExperimentState(StrEnum):
     CREATED = "CREATED"
     PLANNING = "PLANNING"
@@ -297,6 +318,49 @@ class FinalReport(BaseModel):
 
 
 Experiment.model_rebuild()
+
+
+class ProofCheckStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    VERIFIED = "VERIFIED"
+    FAILED = "FAILED"
+
+
+class AgentTaskStatus(StrEnum):
+    RUNNING = "RUNNING"
+    WAITING = "WAITING"
+    VERIFIED = "VERIFIED"
+    FAILED = "FAILED"
+
+
+class ProofCheck(BaseModel):
+    key: str
+    label: str
+    status: ProofCheckStatus = ProofCheckStatus.PENDING
+    evidence: str = ""
+
+
+class TaskCheckpoint(BaseModel):
+    checkpoint_id: UUID = Field(default_factory=uuid4)
+    timestamp: datetime = Field(default_factory=utc_now)
+    label: str
+    status: AgentTaskStatus
+
+
+class AgentTask(BaseModel):
+    task_id: UUID = Field(default_factory=uuid4)
+    session_id: str
+    request: str
+    status: AgentTaskStatus = AgentTaskStatus.RUNNING
+    runtime: str = "soki-core"
+    checks: list[ProofCheck]
+    checkpoints: list[TaskCheckpoint] = Field(default_factory=list)
+    experiment_id: UUID | None = None
+    response: str = ""
+    error: str = ""
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class SystemStatus(BaseModel):

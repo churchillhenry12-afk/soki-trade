@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from base64 import urlsafe_b64decode
 from os import stat
 from pathlib import Path
 from stat import S_IMODE
@@ -8,6 +9,22 @@ from time import monotonic, sleep
 
 from fastapi.testclient import TestClient
 from qforge_api.main import app
+
+
+def compact_pairing_payload(raw: str) -> dict[str, str]:
+    prefix, version, pairing_token, code, *encoded_url = raw.split(":")
+    assert (prefix, version) == ("soki", "1")
+    pairing_bytes = urlsafe_b64decode(pairing_token + "=" * (-len(pairing_token) % 4))
+    pairing_id = (
+        f"{pairing_bytes.hex()[:8]}-{pairing_bytes.hex()[8:12]}-"
+        f"{pairing_bytes.hex()[12:16]}-{pairing_bytes.hex()[16:20]}-"
+        f"{pairing_bytes.hex()[20:]}"
+    )
+    api_base_url = "http://127.0.0.1:8000"
+    if encoded_url:
+        url_token = encoded_url[0]
+        api_base_url = urlsafe_b64decode(url_token + "=" * (-len(url_token) % 4)).decode()
+    return {"pairing_id": pairing_id, "code": code, "api_base_url": api_base_url}
 
 
 def test_vertical_slice_reaches_a_deterministic_risk_decision(tmp_path: Path, monkeypatch) -> None:
@@ -100,8 +117,8 @@ def test_production_runtime_is_ready_without_optional_ai(tmp_path: Path, monkeyp
         assert status_response.status_code == 200
         status = status_response.json()
         assert status["runtime"] == "PRODUCTION"
-        assert status["hermes"]["status"] == "READY"
-        assert status["hermes"]["adapter_kind"] == "local-deterministic-research"
+        assert status["hermes"]["status"] == "OFF"
+        assert status["hermes"]["adapter_kind"] == "hermes-http-runtime"
         assert status["market_data"]["status"] == "READY"
         assert status["market_data"]["source"] == "PUBLIC_FEED"
         assert status["quantum"]["status"] == "DISABLED"
@@ -228,6 +245,57 @@ def test_agent_chat_manages_connections_and_general_tasks(tmp_path: Path, monkey
         assert general.status_code == 200
         assert general.json()["action"] == "MESSAGE"
         assert "MOCK DIRECTOR" in general.json()["reply"]
+
+        with client.stream(
+            "POST",
+            "/agent/chat/stream",
+            json={
+                "message": "Help me write a concise release note",
+                "history": [],
+                "experiment_id": None,
+                "session_id": "stream-integration-test",
+            },
+        ) as streamed:
+            assert streamed.status_code == 200
+            events = [json.loads(line) for line in streamed.iter_lines() if line]
+        activities = [
+            event["activity"]
+            for event in events
+            if event.get("type") == "activity"
+        ]
+        assert {activity["id"] for activity in activities} >= {
+            "proof",
+            "understand",
+            "work",
+            "runtime",
+            "inspect",
+        }
+        assert any(
+            activity["id"] == "runtime" and activity["state"] == "running"
+            for activity in activities
+        )
+        assert any(
+            activity["id"] == "work" and activity["state"] == "running"
+            for activity in activities
+        )
+        result = next(event["response"] for event in events if event["type"] == "result")
+        assert result["proof"]["status"] == "VERIFIED"
+
+        phone = client.post(
+            "/agent/chat",
+            json={"message": "Pair my Android phone", "history": []},
+        )
+        assert phone.status_code == 200
+        assert phone.json()["client_action"] == "PAIR_PHONE"
+
+        hermes = client.post(
+            "/agent/chat",
+            json={"message": "Configure Hermes", "history": []},
+        )
+        assert hermes.status_code == 200
+        assert hermes.json()["client_action"] == "CONNECT_HERMES"
+        assert general.json()["proof"]["status"] == "VERIFIED"
+        assert general.json()["task_id"]
 
         async def raw_tool_call(_prompt: str, *, system_prompt: str | None = None) -> str:
             del system_prompt
@@ -396,3 +464,143 @@ def test_verified_hosted_ui_can_preflight_local_api(tmp_path: Path, monkeypatch)
         "https://soki-trade-agent.vercel.app"
     )
     assert response.headers["access-control-allow-private-network"] == "true"
+
+
+def test_qr_pairing_is_one_time_authenticated_and_revocable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QFORGE_DATABASE_URL", f"sqlite:///{tmp_path / 'pairing.db'}")
+    monkeypatch.setenv("QFORGE_GATEWAY_CONFIG_PATH", str(tmp_path / "gateways.json"))
+    monkeypatch.setenv("QFORGE_DEMO_MODE", "true")
+    with TestClient(app) as client:
+        created = client.post(
+            "/pairing/sessions",
+            json={"api_base_url": "http://127.0.0.1:8000"},
+        )
+        assert created.status_code == 201
+        qr_payload = compact_pairing_payload(created.json()["qr_payload"])
+        assert qr_payload["api_base_url"] == "http://127.0.0.1:8000"
+
+        claim = client.post(
+            "/pairing/claim",
+            json={
+                "pairing_id": qr_payload["pairing_id"],
+                "code": qr_payload["code"],
+                "device_name": "Pixel test",
+            },
+        )
+        assert claim.status_code == 200
+        token = claim.json()["device_token"]
+        device_id = claim.json()["device_id"]
+
+        repeated = client.post(
+            "/pairing/claim",
+            json={
+                "pairing_id": qr_payload["pairing_id"],
+                "code": qr_payload["code"],
+                "device_name": "Second device",
+            },
+        )
+        assert repeated.status_code == 410
+
+        missing_auth = client.get("/mobile/status")
+        assert missing_auth.status_code == 401
+        status_response = client.get(
+            "/mobile/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert status_response.status_code == 200
+        assert status_response.json()["device"]["name"] == "Pixel test"
+
+        devices = client.get("/devices")
+        assert devices.status_code == 200
+        assert devices.json()[0]["device_id"] == device_id
+        assert "device_token" not in devices.text
+
+        assert client.delete(f"/devices/{device_id}").status_code == 200
+        revoked = client.get(
+            "/mobile/status",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert revoked.status_code == 401
+
+
+def test_attachments_are_stored_forwarded_and_isolated_by_device(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("QFORGE_DATABASE_URL", f"sqlite:///{tmp_path / 'attachments.db'}")
+    monkeypatch.setenv("QFORGE_GATEWAY_CONFIG_PATH", str(tmp_path / "gateways.json"))
+    monkeypatch.setenv("QFORGE_ATTACHMENT_DIRECTORY", str(tmp_path / "attachments"))
+    monkeypatch.setenv("QFORGE_DEMO_MODE", "true")
+    captured: dict[str, str] = {}
+
+    async def capture_prompt(prompt: str, *, system_prompt: str | None = None) -> str:
+        del system_prompt
+        captured["prompt"] = prompt
+        return "I read the attachment."
+
+    with TestClient(app) as client:
+        local_upload = client.post(
+            "/attachments",
+            files={"file": ("notes.txt", b"important launch detail", "text/plain")},
+        )
+        assert local_upload.status_code == 201
+        local_attachment = local_upload.json()
+        assert local_attachment["kind"] == "DOCUMENT"
+        assert local_attachment["size_bytes"] == len(b"important launch detail")
+        assert client.get(local_attachment["download_url"]).content == b"important launch detail"
+
+        rejected = client.post(
+            "/attachments",
+            files={"file": ("unsafe.exe", b"MZ", "application/x-msdownload")},
+        )
+        assert rejected.status_code == 415
+
+        monkeypatch.setattr(app.state.model_router, "complete", capture_prompt)
+        response = client.post(
+            "/agent/chat",
+            json={
+                "message": "Summarize my note",
+                "history": [],
+                "attachment_ids": [local_attachment["attachment_id"]],
+            },
+        )
+        assert response.status_code == 200
+        assert "important launch detail" in captured["prompt"]
+
+        created = client.post(
+            "/pairing/sessions",
+            json={"api_base_url": "http://127.0.0.1:8000"},
+        )
+        payload = compact_pairing_payload(created.json()["qr_payload"])
+        claimed = client.post(
+            "/pairing/claim",
+            json={
+                "pairing_id": payload["pairing_id"],
+                "code": payload["code"],
+                "device_name": "Pixel attachment test",
+            },
+        )
+        token = claimed.json()["device_token"]
+        authorization = {"Authorization": f"Bearer {token}"}
+        mobile_upload = client.post(
+            "/mobile/attachments",
+            headers=authorization,
+            files={"file": ("chart.png", b"\x89PNG\r\n", "image/png")},
+        )
+        assert mobile_upload.status_code == 201
+        assert mobile_upload.json()["kind"] == "IMAGE"
+        assert len(client.get("/mobile/attachments", headers=authorization).json()) == 1
+
+        cross_owner = client.post(
+            "/mobile/chat",
+            headers=authorization,
+            json={
+                "message": "Read the laptop file",
+                "history": [],
+                "attachment_ids": [local_attachment["attachment_id"]],
+            },
+        )
+        assert cross_owner.status_code == 404

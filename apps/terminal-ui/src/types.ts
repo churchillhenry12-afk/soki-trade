@@ -30,6 +30,11 @@ export type SetupStatus = {
     runtime: "PRODUCTION" | "DEMO";
     execution: string;
   };
+  hermes?: IntegrationStatus & {
+    configured?: boolean;
+    url?: string;
+    last_error?: string;
+  };
   model: {
     provider: string;
     model: string;
@@ -121,6 +126,30 @@ export type AgentChatResponse = {
   client_action: "CONNECT_MODEL" | "CONNECT_TELEGRAM" | "CONNECT_MT5" | null;
   experiment_id: string | null;
   state: string | null;
+  session_id: string | null;
+  task_id: string | null;
+  runtime: string;
+  proof: AgentTask | null;
+};
+
+export type ProofCheck = {
+  key: string;
+  label: string;
+  status: "PENDING" | "RUNNING" | "VERIFIED" | "FAILED";
+  evidence: string;
+};
+
+export type AgentTask = {
+  task_id: string;
+  session_id: string;
+  request: string;
+  status: "RUNNING" | "WAITING" | "VERIFIED" | "FAILED";
+  runtime: string;
+  checks: ProofCheck[];
+  response: string;
+  error: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ExperimentEvent = {
