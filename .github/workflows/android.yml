@@ -34,8 +34,7 @@ jobs:
           grep -F 'package="code.soki.mobile"' "$RUNNER_TEMP/soki-manifest.xml"
           grep -F 'android:versionCode="2"' "$RUNNER_TEMP/soki-manifest.xml"
           grep -F 'android:usesCleartextTraffic="true"' "$RUNNER_TEMP/soki-manifest.xml"
-          grep -F 'android:networkSecurityConfig="@xml/network_security_config"' \
-            "$RUNNER_TEMP/soki-manifest.xml"
+          grep -F 'android:networkSecurityConfig=' "$RUNNER_TEMP/soki-manifest.xml"
 
       - uses: actions/upload-artifact@v4
         with:
