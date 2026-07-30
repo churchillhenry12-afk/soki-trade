@@ -173,6 +173,7 @@ cat >"$launcher" <<EOF
 set -euo pipefail
 export HERMES_HOME='$hermes_home'
 export HERMES_BIN='$hermes_command'
+export PATH='$(dirname "$uv_command")':'$(dirname "$npm_command")':"\$PATH"
 export QFORGE_DATABASE_URL='sqlite:///$soki_data_directory/qforge.db'
 export QFORGE_PROVIDER_CONFIG_PATH='$soki_data_directory/provider-config.json'
 export QFORGE_GATEWAY_CONFIG_PATH='$soki_data_directory/gateway-config.json'

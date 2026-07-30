@@ -255,11 +255,14 @@ try {
     Invoke-Checked -Command $hermesCommand -CommandArguments @("gateway", "start")
 
     $databasePath = (Join-Path $sokiDataDirectory "qforge.db").Replace("\", "/")
+    $uvDirectory = Split-Path -Parent $uvCommand
+    $npmDirectory = Split-Path -Parent $npmCommand
     $launcherPath = Join-Path $sokiBinDirectory "soki-code.cmd"
     $launcher = @(
         "@echo off",
         "set `"HERMES_HOME=$hermesHome`"",
         "set `"HERMES_BIN=$hermesCommand`"",
+        "set `"PATH=$uvDirectory;$npmDirectory;%PATH%`"",
         "set `"QFORGE_DATABASE_URL=sqlite:///$databasePath`"",
         "set `"QFORGE_PROVIDER_CONFIG_PATH=$(Join-Path $sokiDataDirectory 'provider-config.json')`"",
         "set `"QFORGE_GATEWAY_CONFIG_PATH=$(Join-Path $sokiDataDirectory 'gateway-config.json')`"",
