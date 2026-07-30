@@ -100,8 +100,7 @@ try {
 
     $env:HERMES_HOME = $hermesHome
     & $hermesInstaller `
-        -Branch "main" `
-        -Commit $hermesCommit `
+        -Branch $hermesTag `
         -InstallDir $hermesDirectory `
         -HermesHome $hermesHome `
         -SkipSetup `
@@ -122,6 +121,12 @@ try {
     }
     if (-not $gitCommand) {
         throw "The bundled runtime could not provide Git."
+    }
+    $installedHermesCommit = (
+        & $gitCommand -C $hermesDirectory rev-parse HEAD
+    ).Trim()
+    if ($LASTEXITCODE -ne 0 -or $installedHermesCommit -ne $hermesCommit) {
+        throw "The downloaded Hermes runtime did not match the pinned commit."
     }
 
     Write-Host "Installing Soki Code..."

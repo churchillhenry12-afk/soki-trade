@@ -76,8 +76,7 @@ fi
 
 export HERMES_HOME="$hermes_home"
 bash "$hermes_installer" \
-  --branch main \
-  --commit "$hermes_commit" \
+  --branch "$hermes_tag" \
   --dir "$hermes_directory" \
   --hermes-home "$hermes_home" \
   --skip-setup \
@@ -90,6 +89,12 @@ git_command="$(find_executable git \
     echo "The bundled runtime could not provide Git." >&2
     exit 1
   }
+
+installed_hermes_commit="$("$git_command" -C "$hermes_directory" rev-parse HEAD)"
+if [[ "$installed_hermes_commit" != "$hermes_commit" ]]; then
+  echo "The downloaded Hermes runtime did not match the pinned commit." >&2
+  exit 1
+fi
 
 echo "Installing Soki Code..."
 if [[ -d "$soki_app_directory/.git" ]]; then
