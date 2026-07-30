@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, WS_BASE } from "./api";
 import type {
   AgentChatResponse,
+  AgentTask,
   ChatTurn,
   Experiment,
   ExperimentEvent,
@@ -23,6 +24,8 @@ export function useQForge() {
   const [connection, setConnection] = useState<"OFFLINE" | "CONNECTING" | "LIVE">("OFFLINE");
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
+  const sessionIdRef = useRef(`soky-web-${crypto.randomUUID()}`);
+  const [lastProof, setLastProof] = useState<AgentTask | null>(null);
 
   useEffect(() => {
     void api.status().then(setStatus).catch((reason: Error) => setError(reason.message));
@@ -125,7 +128,9 @@ export function useQForge() {
         message,
         history,
         experiment_id: experiment?.experiment_id ?? null,
+        session_id: sessionIdRef.current,
       });
+      if (response.proof) setLastProof(response.proof);
       if (response.experiment_id && response.action === "EXPERIMENT_STARTED") {
         setEvents([]);
         const current = await api.experiment(response.experiment_id);
@@ -146,6 +151,7 @@ export function useQForge() {
     events,
     connection,
     error,
+    lastProof,
     launch,
     control,
     approvePaper,

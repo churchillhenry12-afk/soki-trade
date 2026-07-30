@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
@@ -10,6 +10,8 @@ from sqlalchemy import JSON, DateTime, Integer, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 from qforge.schemas import (
+    AgentTask,
+    Attachment,
     Experiment,
     ExperimentEvent,
     ExperimentState,
@@ -59,6 +61,49 @@ class ExperimentEventRow(Base):
     state: Mapped[str] = mapped_column(String(40))
     status: Mapped[str] = mapped_column(String(20))
     payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class AgentTaskRow(Base):
+    __tablename__ = "agent_tasks"
+
+    task_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    session_id: Mapped[str] = mapped_column(String(120), index=True)
+    status: Mapped[str] = mapped_column(String(30), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class AttachmentRow(Base):
+    __tablename__ = "attachments"
+
+    attachment_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(120), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class PairingSessionRow(Base):
+    __tablename__ = "pairing_sessions"
+
+    pairing_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    api_base_url: Mapped[str] = mapped_column(String(500))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_device_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+
+class PairedDeviceRow(Base):
+    __tablename__ = "paired_devices"
+
+    device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AuditEntity:
@@ -260,6 +305,206 @@ class Repository:
         with self.session_factory() as session:
             rows = cast(list[Any], session.query(RiskReviews).all())
             return [cast(dict[str, Any], row.payload) for row in rows]
+
+    def save_agent_task(self, task: AgentTask) -> AgentTask:
+        with self.session_factory() as session:
+            row = session.get(AgentTaskRow, str(task.task_id))
+            payload = task.model_dump(mode="json")
+            if row is None:
+                session.add(
+                    AgentTaskRow(
+                        task_id=str(task.task_id),
+                        session_id=task.session_id,
+                        status=task.status,
+                        created_at=task.created_at,
+                        updated_at=task.updated_at,
+                        payload=payload,
+                    )
+                )
+            else:
+                row.status = task.status
+                row.updated_at = task.updated_at
+                row.payload = payload
+            session.commit()
+        return task
+
+    def get_agent_task(self, task_id: UUID) -> AgentTask | None:
+        with self.session_factory() as session:
+            row = session.get(AgentTaskRow, str(task_id))
+            return AgentTask.model_validate(row.payload) if row else None
+
+    def list_agent_tasks(self, *, limit: int = 25) -> list[AgentTask]:
+        with self.session_factory() as session:
+            rows = (
+                session.query(AgentTaskRow)
+                .order_by(AgentTaskRow.updated_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [AgentTask.model_validate(row.payload) for row in rows]
+
+    def save_attachment(self, attachment: Attachment) -> Attachment:
+        with self.session_factory() as session:
+            session.add(
+                AttachmentRow(
+                    attachment_id=str(attachment.attachment_id),
+                    owner=attachment.owner,
+                    created_at=attachment.created_at,
+                    payload=attachment.model_dump(mode="json"),
+                )
+            )
+            session.commit()
+        return attachment
+
+    def get_attachment(self, attachment_id: UUID, *, owner: str) -> Attachment | None:
+        with self.session_factory() as session:
+            row = session.get(AttachmentRow, str(attachment_id))
+            if row is None or row.owner != owner:
+                return None
+            return Attachment.model_validate(row.payload)
+
+    def list_attachments(self, *, owner: str, limit: int = 50) -> list[Attachment]:
+        with self.session_factory() as session:
+            rows = (
+                session.query(AttachmentRow)
+                .filter(AttachmentRow.owner == owner)
+                .order_by(AttachmentRow.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [Attachment.model_validate(row.payload) for row in rows]
+
+    def create_pairing_session(
+        self,
+        *,
+        pairing_id: UUID,
+        code_hash: str,
+        api_base_url: str,
+        expires_at: datetime,
+    ) -> None:
+        with self.session_factory() as session:
+            session.add(
+                PairingSessionRow(
+                    pairing_id=str(pairing_id),
+                    code_hash=code_hash,
+                    api_base_url=api_base_url,
+                    expires_at=expires_at,
+                )
+            )
+            session.commit()
+
+    def pairing_session(self, pairing_id: UUID) -> dict[str, Any] | None:
+        with self.session_factory() as session:
+            row = session.get(PairingSessionRow, str(pairing_id))
+            if row is None:
+                return None
+            return {
+                "pairing_id": row.pairing_id,
+                "code_hash": row.code_hash,
+                "api_base_url": row.api_base_url,
+                "expires_at": self._aware(row.expires_at),
+                "claimed_at": self._aware(row.claimed_at),
+                "claimed_device_id": row.claimed_device_id,
+            }
+
+    def claim_pairing_session(
+        self,
+        *,
+        pairing_id: UUID,
+        code_hash: str,
+        device_id: UUID,
+        device_name: str,
+        token_hash: str,
+        claimed_at: datetime,
+    ) -> dict[str, Any] | None:
+        with self.session_factory() as session:
+            row = session.get(PairingSessionRow, str(pairing_id))
+            expires_at = (
+                row.expires_at.replace(tzinfo=UTC)
+                if row is not None and row.expires_at.tzinfo is None
+                else row.expires_at
+                if row is not None
+                else claimed_at
+            )
+            if (
+                row is None
+                or row.code_hash != code_hash
+                or row.claimed_at is not None
+                or expires_at <= claimed_at
+            ):
+                return None
+            device = PairedDeviceRow(
+                device_id=str(device_id),
+                name=device_name,
+                token_hash=token_hash,
+                created_at=claimed_at,
+                last_seen_at=claimed_at,
+            )
+            row.claimed_at = claimed_at
+            row.claimed_device_id = str(device_id)
+            session.add(device)
+            session.commit()
+            return {
+                "device_id": str(device_id),
+                "name": device_name,
+                "api_base_url": row.api_base_url,
+                "created_at": claimed_at,
+            }
+
+    def authenticate_device(self, token_hash: str) -> dict[str, Any] | None:
+        now = utc_now()
+        with self.session_factory() as session:
+            row = (
+                session.query(PairedDeviceRow)
+                .filter(
+                    PairedDeviceRow.token_hash == token_hash,
+                    PairedDeviceRow.revoked_at.is_(None),
+                )
+                .one_or_none()
+            )
+            if row is None:
+                return None
+            row.last_seen_at = now
+            session.commit()
+            return {
+                "device_id": row.device_id,
+                "name": row.name,
+                "created_at": self._aware(row.created_at),
+                "last_seen_at": now,
+            }
+
+    def list_paired_devices(self) -> list[dict[str, Any]]:
+        with self.session_factory() as session:
+            rows = (
+                session.query(PairedDeviceRow)
+                .filter(PairedDeviceRow.revoked_at.is_(None))
+                .order_by(PairedDeviceRow.last_seen_at.desc())
+                .all()
+            )
+            return [
+                {
+                    "device_id": row.device_id,
+                    "name": row.name,
+                    "created_at": self._aware(row.created_at),
+                    "last_seen_at": self._aware(row.last_seen_at),
+                }
+                for row in rows
+            ]
+
+    def revoke_paired_device(self, device_id: UUID) -> bool:
+        with self.session_factory() as session:
+            row = session.get(PairedDeviceRow, str(device_id))
+            if row is None or row.revoked_at is not None:
+                return False
+            row.revoked_at = utc_now()
+            session.commit()
+            return True
+
+    @staticmethod
+    def _aware(value: datetime | None) -> datetime | None:
+        if value is None or value.tzinfo is not None:
+            return value
+        return value.replace(tzinfo=UTC)
 
     def set_report(self, experiment_id: UUID, report: FinalReport) -> Experiment:
         experiment = self.get_experiment(experiment_id)

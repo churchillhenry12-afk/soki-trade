@@ -8,27 +8,23 @@ import shutil
 import subprocess
 import zipfile
 from dataclasses import dataclass
-from os import chmod, getenv
+from os import getenv
 from pathlib import Path
 from typing import Any, ClassVar, Literal
+from uuid import uuid4
 
 import httpx
+import qrcode
+from rich.markdown import Markdown as RichMarkdown
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Footer, Input, Label, RichLog, Select, Static
+from textual.widgets import Button, Footer, Input, Label, RichLog, Select, Static
 
-SOKI_MARK = r"""
-███████╗ ██████╗ ██╗  ██╗██╗
-██╔════╝██╔═══██╗██║ ██╔╝██║
-███████╗██║   ██║█████╔╝ ██║
-╚════██║██║   ██║██╔═██╗ ██║
-███████║╚██████╔╝██║  ██╗██║
-      S O K I  ·  T R A D E
-""".strip("\n")
+SOKI_MARK = "╭─ soki code ─ agent workspace"
 
 MAC_MT5_URL = (
     "https://download.terminal.free/cdn/web/metaquotes.ltd/mt5/"
@@ -56,6 +52,13 @@ class ModelSubmission:
 
 
 @dataclass(frozen=True)
+class HermesSubmission:
+    url: str
+    api_key: str
+    model: str
+
+
+@dataclass(frozen=True)
 class TelegramSubmission:
     bot_token: str
     chat_id: str
@@ -69,39 +72,31 @@ class MT5Submission:
     token: str | None
 
 
-@dataclass(frozen=True)
-class MT5LoginSubmission:
-    login: str
-    password: str
-    server: str
-    remember: bool
-
-
 class SetupHub(ModalScreen[str | None]):
     CSS = """
     SetupHub {
         align: center middle;
-        background: #020A0F 88%;
+        background: #000000 82%;
     }
     #setup-hub {
-        width: 72;
+        width: 76;
         height: auto;
         padding: 2 3;
-        border: round #45D9C1;
-        background: #0B1F27;
+        border: round #484848;
+        background: #141414;
     }
     #hub-title {
         height: 3;
-        color: #DCEAE8;
-        text-align: center;
+        color: #FF8A3C;
+        text-align: left;
         text-style: bold;
     }
     #hub-state {
         height: auto;
         margin-bottom: 1;
         padding: 1 2;
-        background: #07131A;
-        color: #72918C;
+        background: #0A0A0A;
+        color: #A0A0A0;
     }
     SetupHub Button {
         width: 1fr;
@@ -118,40 +113,45 @@ class SetupHub(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         model = self.status.get("model", {})
+        hermes = self.status.get("hermes", {})
         telegram = self.status.get("telegram", {})
         mt5 = self.status.get("mt5", {})
         data = self.status.get("market_data", {})
+        devices = int(self.status.get("paired_devices", 0))
         state = "\n".join(
             (
-                f"MODEL      {'CONNECTED' if model.get('connected') else 'NOT CONNECTED'}"
+                f"HERMES     {'READY' if hermes.get('verified') else 'OFF'}"
+                f"  ·  {hermes.get('model', 'hermes')}",
+                f"MODEL      {'READY' if model.get('connected') else 'OFF'}"
                 f"  ·  {model.get('model', '—')}",
-                f"DATA       {data.get('status', '—')}  ·  {data.get('source', '—')}",
-                f"TELEGRAM   {'CONNECTED' if telegram.get('inbound_ready') else 'NOT CONNECTED'}",
-                f"MT5        {'CONNECTED' if mt5.get('connected') else 'NOT CONNECTED'}"
-                f"  ·  {mt5.get('transport', '—')}",
+                f"PHONE      {devices} PAIRED"
+                f"  ·  TELEGRAM {'READY' if telegram.get('inbound_ready') else 'OFF'}",
+                f"MT5        {'READY' if mt5.get('connected') else 'OFF'}"
+                f"  ·  DATA {data.get('status', '—')}"
+                "  ·  PAPER ONLY",
             )
         )
         with Container(id="setup-hub"):
-            yield Static("SOKI TRADE · CONNECTION SETUP", id="hub-title")
+            yield Static("universal setup", id="hub-title")
             yield Static(state, id="hub-state")
             with Horizontal():
-                yield Button("1  MODEL", id="hub-model", variant="primary")
-                yield Button("2  TELEGRAM", id="hub-telegram")
+                yield Button("HERMES RUNTIME", id="hub-hermes", variant="primary")
+                yield Button("FALLBACK MODEL", id="hub-model")
             with Horizontal():
-                yield Button("3  MT5 GATEWAY", id="hub-mt5")
-                yield Button("4  MT5 LOGIN", id="hub-login")
+                yield Button("PAIR PHONE", id="hub-phone")
+                yield Button("TELEGRAM", id="hub-telegram")
             with Horizontal():
-                yield Button("INSTALL MT5", id="hub-install")
+                yield Button("MT5 · GUIDE ME", id="hub-mt5")
                 yield Button("CLOSE", id="hub-close")
 
     @on(Button.Pressed)
     def choose(self, event: Button.Pressed) -> None:
         actions = {
+            "hub-hermes": "hermes",
             "hub-model": "model",
+            "hub-phone": "phone",
             "hub-telegram": "telegram",
             "hub-mt5": "mt5",
-            "hub-login": "mt5-login",
-            "hub-install": "install-mt5",
             "hub-close": None,
         }
         self.dismiss(actions.get(event.button.id or ""))
@@ -164,43 +164,43 @@ class FormScreen(ModalScreen[Any]):
     CSS = """
     FormScreen {
         align: center middle;
-        background: #020A0F 88%;
+        background: #000000 82%;
     }
     .form-dialog {
         width: 78;
         height: auto;
         max-height: 92%;
         padding: 2 3;
-        border: round #45D9C1;
-        background: #0B1F27;
+        border: round #484848;
+        background: #141414;
     }
     .form-title {
         height: 3;
-        text-align: center;
-        color: #DCEAE8;
+        text-align: left;
+        color: #FF8A3C;
         text-style: bold;
     }
     .form-help {
         height: auto;
         margin: 1 0;
-        color: #72918C;
+        color: #808080;
     }
     .form-fields {
         height: auto;
         max-height: 25;
-        scrollbar-color: #45D9C1 #07131A;
+        scrollbar-color: #FF6A00 #0A0A0A;
     }
     FormScreen Label {
-        color: #AFC8C4;
+        color: #A0A0A0;
     }
     FormScreen Input, FormScreen Select {
         margin-bottom: 1;
-        border: tall #294853;
-        background: #07131A;
-        color: #DCEAE8;
+        border: tall #3C3C3C;
+        background: #0A0A0A;
+        color: #EEEEEE;
     }
     FormScreen Input:focus, FormScreen Select:focus {
-        border: tall #45D9C1;
+        border: tall #FF6A00;
     }
     .form-actions {
         height: 3;
@@ -232,7 +232,7 @@ class ModelScreen(FormScreen):
         current_model = str(self.current.get("model", "")).strip()
         model_options = ((current_model, current_model),) if current_model else ()
         with Container(classes="form-dialog"):
-            yield Static("CONNECT AGENT INTELLIGENCE", classes="form-title")
+            yield Static("FALLBACK MODEL", classes="form-title")
             with VerticalScroll(classes="form-fields"):
                 yield Label("Provider")
                 yield Select(
@@ -348,6 +348,142 @@ class ModelScreen(FormScreen):
         self.dismiss(None)
 
 
+class HermesScreen(FormScreen):
+    def __init__(self, current: dict[str, Any]) -> None:
+        super().__init__()
+        self.current = current
+
+    def compose(self) -> ComposeResult:
+        with Container(classes="form-dialog"):
+            yield Static("HERMES RUNTIME", classes="form-title")
+            with VerticalScroll(classes="form-fields"):
+                yield Label("Runtime URL")
+                yield Input(
+                    str(self.current.get("url", "")),
+                    placeholder="http://127.0.0.1:8642",
+                    id="hermes-url",
+                )
+                yield Label("API key")
+                yield Input(
+                    "",
+                    password=True,
+                    placeholder="Hermes runtime key",
+                    id="hermes-key",
+                )
+                yield Label("Model")
+                yield Input(
+                    str(self.current.get("model", "hermes")),
+                    placeholder="hermes",
+                    id="hermes-model",
+                )
+            yield Static(
+                "This is the primary agent harness. Save runs a real health check; "
+                "the fallback model is used only when Hermes is unavailable.",
+                classes="form-help",
+            )
+            with Horizontal(classes="form-actions"):
+                yield Button("SAVE + VERIFY", id="hermes-save", variant="primary")
+                yield Button("CANCEL", id="form-cancel")
+
+    @on(Button.Pressed, "#hermes-save")
+    def save(self) -> None:
+        url = self.query_one("#hermes-url", Input).value.strip()
+        key = self.query_one("#hermes-key", Input).value.strip()
+        model = self.query_one("#hermes-model", Input).value.strip()
+        if not url or not key or not model:
+            self.query_one(".form-help", Static).update(
+                "Runtime URL, API key, and model are required."
+            )
+            return
+        self.dismiss(HermesSubmission(url=url, api_key=key, model=model))
+
+    @on(Button.Pressed, "#form-cancel")
+    def cancel(self) -> None:
+        self.dismiss(None)
+
+
+class PhonePairScreen(ModalScreen[None]):
+    CSS = """
+    PhonePairScreen {
+        align: center middle;
+        background: #000000 82%;
+    }
+    #phone-pair {
+        width: 64;
+        height: auto;
+        padding: 0 2;
+        border: round #484848;
+        background: #141414;
+    }
+    #phone-title {
+        height: 1;
+        color: #FF8A3C;
+        text-style: bold;
+    }
+    #phone-qr {
+        height: auto;
+        width: auto;
+        color: #EEEEEE;
+        background: #000000;
+        text-align: center;
+    }
+    #phone-help {
+        height: 1;
+        color: #A0A0A0;
+        text-align: center;
+    }
+    #phone-close {
+        width: 100%;
+        height: 1;
+        border: none;
+        margin: 0;
+    }
+    """
+    BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
+        Binding("escape", "close", "Close", show=False)
+    ]
+
+    def __init__(self, payload: str, expires_at: str) -> None:
+        super().__init__()
+        self.payload = payload
+        self.expires_at = expires_at
+
+    @staticmethod
+    def qr_text(payload: str) -> str:
+        code = qrcode.QRCode(version=None, box_size=1, border=1)
+        code.add_data(payload)
+        code.make(fit=True)
+        matrix = code.get_matrix()
+        rows: list[str] = []
+        for index in range(0, len(matrix), 2):
+            top = matrix[index]
+            bottom = matrix[index + 1] if index + 1 < len(matrix) else [False] * len(top)
+            rows.append(
+                "".join(
+                    "█" if upper and lower else "▀" if upper else "▄" if lower else " "
+                    for upper, lower in zip(top, bottom, strict=True)
+                )
+            )
+        return "\n".join(rows)
+
+    def compose(self) -> ComposeResult:
+        with Container(id="phone-pair"):
+            yield Static("pair Android", id="phone-title")
+            yield Static(self.qr_text(self.payload), id="phone-qr")
+            yield Static(
+                "Scan with soki Android · one use · expires in five minutes",
+                id="phone-help",
+            )
+            yield Button("DONE", id="phone-close", variant="primary")
+
+    @on(Button.Pressed, "#phone-close")
+    def close_button(self) -> None:
+        self.dismiss(None)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 class TelegramScreen(FormScreen):
     def compose(self) -> ComposeResult:
         with Container(classes="form-dialog"):
@@ -361,7 +497,7 @@ class TelegramScreen(FormScreen):
                 id="tg-chat",
             )
             yield Static(
-                "Soki Trade validates the bot with Telegram, sends a real test message, "
+                "soki code validates the bot with Telegram, sends a real test message, "
                 "and then listens only to the exact chat ID entered here.",
                 classes="form-help",
             )
@@ -456,100 +592,63 @@ class MT5Screen(FormScreen):
         self.dismiss(None)
 
 
-class MT5LoginScreen(FormScreen):
-    def compose(self) -> ComposeResult:
-        with Container(classes="form-dialog"):
-            yield Static("LOGIN TO MT5 · DEMO / INVESTOR", classes="form-title")
-            yield Label("Account login")
-            yield Input("", placeholder="Account number", id="login-number")
-            yield Label("Broker server")
-            yield Input("", placeholder="Broker-Server or host:port", id="login-server")
-            yield Label("Demo or investor password")
-            yield Input("", password=True, id="login-password")
-            yield Checkbox(
-                "Ask MT5 to remember the account",
-                value=True,
-                id="login-remember",
-            )
-            yield Static(
-                "The password is written to a temporary owner-only configuration, passed "
-                "to the official MT5 terminal, then deleted. Automated trading is forced off. "
-                "Passkey or broker confirmation may still appear in MT5.",
-                classes="form-help",
-            )
-            with Horizontal(classes="form-actions"):
-                yield Button("LAUNCH + LOGIN", id="login-save", variant="primary")
-                yield Button("CANCEL", id="form-cancel")
-
-    @on(Button.Pressed, "#login-save")
-    def save(self) -> None:
-        self.dismiss(
-            MT5LoginSubmission(
-                login=self.query_one("#login-number", Input).value.strip(),
-                server=self.query_one("#login-server", Input).value.strip(),
-                password=self.query_one("#login-password", Input).value,
-                remember=self.query_one("#login-remember", Checkbox).value,
-            )
-        )
-
-    @on(Button.Pressed, "#form-cancel")
-    def cancel(self) -> None:
-        self.dismiss(None)
-
-
 class SokiTradeTerminal(App[None]):
-    TITLE = "Soki Trade"
-    SUB_TITLE = "Operations agent · trading intelligence"
+    TITLE = "soki code"
+    SUB_TITLE = "local agent"
     CSS = """
     Screen {
-        align: center top;
-        background: #020A0F;
-        color: #DCEAE8;
+        align: center middle;
+        background: #000000;
+        color: #EEEEEE;
     }
     #soki-shell {
-        width: 112;
-        max-width: 96%;
-        height: 100%;
-        padding: 0 2;
-        background: #07131A;
+        width: 96;
+        max-width: 94%;
+        height: 94%;
+        padding: 0 1;
+        background: #0A0A0A;
     }
     #soki-mark {
-        height: 6;
-        color: #45D9C1;
-        text-align: center;
+        height: 2;
+        padding: 0 1;
+        color: #FF8A3C;
+        text-align: left;
         text-style: bold;
+        border-bottom: solid #282828;
     }
     #connection-strip {
         height: 1;
         padding: 0 1;
-        background: #0B1F27;
-        color: #AFC8C4;
-        text-align: center;
+        background: #0A0A0A;
+        color: #808080;
+        text-align: left;
     }
     #chat-log {
         height: 1fr;
-        min-height: 5;
+        min-height: 6;
         margin-top: 1;
-        padding: 1 2;
-        border: round #294853;
-        background: #051016;
-        scrollbar-color: #45D9C1 #07131A;
-    }
-    #working-line {
-        height: 0;
         padding: 0 2;
-        color: #8CE9D9;
-        background: #0A1920;
-        text-style: italic;
+        background: #0A0A0A;
+        scrollbar-color: #484848 #0A0A0A;
     }
-    #working-line.active {
-        height: 1;
+    #activity-panel {
+        display: none;
+        height: auto;
+        max-height: 9;
+        margin: 1 2 0 2;
+        padding: 1 2;
+        border-left: thick #FF6A00;
+        background: #141414;
+        color: #A0A0A0;
+    }
+    #activity-panel.active {
+        display: block;
     }
     #quick-line {
         height: 1;
         padding: 0 1;
-        color: #72918C;
-        text-align: center;
+        color: #606060;
+        text-align: left;
     }
     #composer {
         height: 3;
@@ -557,40 +656,48 @@ class SokiTradeTerminal(App[None]):
     #agent-input {
         width: 1fr;
         margin-right: 1;
-        border: tall #294853;
-        background: #0B1F27;
-        color: #DCEAE8;
+        border: tall #3C3C3C;
+        background: #141414;
+        color: #EEEEEE;
     }
     #agent-input:focus {
-        border: tall #45D9C1;
+        border: tall #FF6A00;
     }
     #send {
-        width: 14;
-        background: #45D9C1;
-        color: #020A0F;
+        width: 11;
+        background: #FF6A00;
+        color: #0A0A0A;
         text-style: bold;
+    }
+    #attach {
+        width: 10;
+        margin-right: 1;
+        color: #A0A0A0;
+        border: tall #3C3C3C;
+        background: #141414;
     }
     #notice {
         height: 1;
-        color: #65A7FF;
-        text-align: center;
+        color: #818CF8;
+        text-align: left;
+        padding-left: 1;
     }
     Footer {
-        background: #07131A;
-        color: #72918C;
+        background: #0A0A0A;
+        color: #606060;
     }
     Button {
-        border: tall #294853;
-        background: #0B1F27;
-        color: #DCEAE8;
+        border: tall #3C3C3C;
+        background: #141414;
+        color: #EEEEEE;
     }
     Button:hover, Button:focus {
-        border: tall #45D9C1;
-        color: #45D9C1;
+        border: tall #FF6A00;
+        color: #FF8A3C;
     }
     Button.-primary {
-        background: #45D9C1;
-        color: #020A0F;
+        background: #FF6A00;
+        color: #0A0A0A;
     }
     """
     BINDINGS: ClassVar[list[Binding | tuple[str, str] | tuple[str, str, str]]] = [
@@ -605,71 +712,137 @@ class SokiTradeTerminal(App[None]):
         self.setup_status: dict[str, Any] = {}
         self.history: list[dict[str, str]] = []
         self.experiment_id: str | None = None
+        self.session_id = f"soki-tui-{uuid4().hex}"
+        self.pending_attachments: list[str] = []
+        self.activity_items: dict[str, dict[str, str]] = {}
+        self.activity_frame = 0
 
     def compose(self) -> ComposeResult:
         with Container(id="soki-shell"):
             yield Static(SOKI_MARK, id="soki-mark")
             yield Static(
-                "AGENT ○   DATA ○   TELEGRAM ○   MT5 ○   LIVE ORDERS OFF",
+                "AGENT ○   PROOF ●   DATA ○   PHONE ○   PAPER ONLY",
                 id="connection-strip",
             )
             yield RichLog(id="chat-log", highlight=False, markup=False, wrap=True)
-            yield Static("", id="working-line")
+            yield Static("", id="activity-panel")
             yield Static(
-                "/connect telegram  /connect mt5  /backtest EURUSD M15  /help",
+                "/setup  ·  /phone  ·  /attach path  ·  /help",
                 id="quick-line",
             )
             with Horizontal(id="composer"):
                 yield Input(
-                    placeholder="Talk to Soki Trade… or type /help",
+                    placeholder="Message soki code…",
                     id="agent-input",
                 )
-                yield Button("SEND  ↵", id="send", variant="primary")
+                yield Button("ATTACH", id="attach")
+                yield Button("SEND ↵", id="send", variant="primary")
             yield Static("", id="notice")
         yield Footer()
 
     async def on_mount(self) -> None:
-        self.query_one("#chat-log", RichLog).write(
-            self._agent_text(
-                "Online. I can handle general questions, manage your connections, and run "
-                "trading research. Ask normally or type /help."
-            )
+        self._write_agent_message(
+            "Ready. Ask a question, give me a task, or open **/setup**."
         )
+        self.set_interval(0.09, self._animate_activity)
         await self.refresh_setup()
         self.query_one("#agent-input", Input).focus()
 
     @staticmethod
     def _agent_text(message: str) -> Text:
         line = Text()
-        line.append("● SOKI  ", style="bold #45D9C1")
-        line.append(message, style="#DCEAE8")
+        line.append("● soki", style="bold #FF8A3C")
+        line.append("  ", style="#606060")
+        line.append(message, style="#EEEEEE")
         return line
 
     @staticmethod
     def _user_text(message: str) -> Text:
         line = Text()
-        line.append("  YOU   ", style="bold #65A7FF")
-        line.append(message, style="#AFC8C4")
+        line.append("> ", style="bold #818CF8")
+        line.append(message, style="bold #EEEEEE")
         return line
 
     @staticmethod
     def _system_text(message: str, *, warning: bool = False) -> Text:
         return Text(
             f"  {'!' if warning else '·'}     {message}",
-            style="#E6B85C" if warning else "#72918C",
+            style="#FBBF24" if warning else "#808080",
         )
+
+    @staticmethod
+    def _proof_text(proof: dict[str, Any]) -> Text:
+        line = Text()
+        line.append("  ✓ ", style="bold #FF6A00")
+        line.append(f"{proof.get('status', 'UNKNOWN').lower()}  ", style="bold #FF8A3C")
+        checks = proof.get("checks", [])
+        verified = sum(1 for check in checks if check.get("status") == "VERIFIED")
+        line.append(
+            f"{verified}/{len(checks)} checks · task {str(proof.get('task_id', ''))[:8]} · "
+            f"{proof.get('runtime', 'soki-core')}",
+            style="#808080",
+        )
+        return line
+
+    def _write_agent_message(self, message: str) -> None:
+        log = self.query_one("#chat-log", RichLog)
+        log.write(Text("● soki", style="bold #FF8A3C"))
+        log.write(RichMarkdown(message, code_theme="monokai"))
 
     def set_notice(self, message: str) -> None:
         self.query_one("#notice", Static).update(message)
 
     def set_working(self, active: bool) -> None:
-        indicator = self.query_one("#working-line", Static)
-        indicator.update(
-            "● SOKI  Working · understanding your request and checking tools…"
-            if active
-            else ""
-        )
-        indicator.set_class(active, "active")
+        if active:
+            self.activity_items = {
+                "request": {
+                    "label": "Sent the request to the local agent",
+                    "state": "completed",
+                    "detail": "",
+                }
+            }
+            self._render_activity()
+
+    def update_activity(self, activity: dict[str, Any]) -> None:
+        activity_id = str(activity.get("id", "activity"))
+        self.activity_items[activity_id] = {
+            "label": str(activity.get("label", "Working")),
+            "state": str(activity.get("state", "completed")),
+            "detail": str(activity.get("detail", "")),
+        }
+        self._render_activity()
+
+    def _animate_activity(self) -> None:
+        if any(item["state"] == "running" for item in self.activity_items.values()):
+            self.activity_frame = (self.activity_frame + 1) % 10
+            self._render_activity()
+
+    def _render_activity(self) -> None:
+        panel = self.query_one("#activity-panel", Static)
+        if not self.activity_items:
+            panel.remove_class("active")
+            panel.update("")
+            return
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        content = Text()
+        content.append("work trace\n", style="bold #FF8A3C")
+        for item in self.activity_items.values():
+            state = item["state"]
+            glyph = (
+                frames[self.activity_frame]
+                if state == "running"
+                else "✓"
+                if state == "completed"
+                else "!"
+            )
+            style = "#FBBF24" if state == "running" else "#FF8A3C"
+            content.append(f" {glyph} ", style=f"bold {style}")
+            content.append(item["label"], style="#EEEEEE")
+            if item["detail"]:
+                content.append(f"  {item['detail']}", style="#606060")
+            content.append("\n")
+        panel.update(content)
+        panel.add_class("active")
 
     async def refresh_setup(self) -> None:
         try:
@@ -677,28 +850,39 @@ class SokiTradeTerminal(App[None]):
                 response = await client.get(f"{self.api_url}/setup/status")
                 response.raise_for_status()
             self.setup_status = response.json()
-            model = self.setup_status.get("model", {})
+            hermes = self.setup_status.get("hermes", {})
             telegram = self.setup_status.get("telegram", {})
             mt5 = self.setup_status.get("mt5", {})
             data = self.setup_status.get("market_data", {})
+            model = self.setup_status.get("model", {})
+            devices = int(self.setup_status.get("paired_devices", 0))
             self.query_one("#connection-strip", Static).update(
                 "   ".join(
                     (
-                        f"AGENT {'●' if model.get('connected') else '○'}",
+                        f"HERMES {'●' if hermes.get('verified') else '○'}",
+                        f"MODEL {'●' if model.get('connected') else '○'}",
+                        "PROOF ●",
                         f"DATA {'●' if data.get('status') == 'READY' else '○'}",
-                        f"TELEGRAM {'●' if telegram.get('inbound_ready') else '○'}",
+                        f"PHONE {devices}",
+                        f"TG {'●' if telegram.get('inbound_ready') else '○'}",
                         f"MT5 {'●' if mt5.get('connected') else '○'}",
-                        "LIVE ORDERS OFF",
+                        "PAPER ONLY",
                     )
                 )
             )
-            self.set_notice("Ready · one terminal, one conversation")
+            self.set_notice("Ready · every task leaves evidence")
         except (httpx.HTTPError, ValueError) as error:
             self.set_notice(f"Agent API unavailable · {type(error).__name__}")
 
     @on(Button.Pressed, "#send")
     def press_send(self) -> None:
         self.submit_input()
+
+    @on(Button.Pressed, "#attach")
+    def press_attach(self) -> None:
+        field = self.query_one("#agent-input", Input)
+        field.value = "/attach "
+        field.focus()
 
     @on(Input.Submitted, "#agent-input")
     def enter_send(self) -> None:
@@ -738,16 +922,23 @@ class SokiTradeTerminal(App[None]):
                 )
         elif command == "/model":
             self.open_model()
+        elif command == "/hermes":
+            self.open_hermes()
+        elif command == "/phone":
+            self.send_agent_message("Pair my Android phone")
         elif command == "/telegram":
-            self.open_telegram()
+            self.send_agent_message("Help me connect Telegram")
         elif command == "/mt5":
-            self.open_mt5()
-        elif command == "/mt5-login":
-            self.open_mt5_login()
-        elif command == "/install-mt5":
-            self.install_mt5()
+            self.send_agent_message("Help me connect MT5")
         elif command == "/status":
             self.write_status()
+        elif command == "/attach":
+            if argument.strip():
+                self.upload_attachment(argument.strip())
+            else:
+                self.query_one("#chat-log", RichLog).write(
+                    self._system_text("Use /attach followed by a local file path.", warning=True)
+                )
         elif command in {"/backtest", "/test"}:
             request = argument.strip() or "EURUSD M15"
             self.send_agent_message(f"Backtest {request}")
@@ -772,12 +963,13 @@ class SokiTradeTerminal(App[None]):
             "  /connect mt5           connect MT5 through chat\n"
             "  /disconnect telegram   disconnect and forget Telegram\n"
             "  /disconnect mt5        disconnect and forget MT5\n"
-            "  /model                 model provider and API key\n"
-            "  /telegram              Telegram bot gateway\n"
-            "  /mt5                   REST or native MCP gateway\n"
-            "  /install-mt5           download official MT5 installer\n"
-            "  /mt5-login             launch MT5 with demo/investor login\n"
+            "  /hermes               primary Hermes runtime\n"
+            "  /model                 fallback model provider\n"
+            "  /phone                 create an Android pairing QR\n"
+            "  /telegram              let the agent guide Telegram setup\n"
+            "  /mt5                   let the agent guide MT5 setup\n"
             "  /backtest EURUSD M15   start a real-data study\n"
+            "  /attach path/to/file   add an image, video, or document\n"
             "  /report                explain the current report\n"
             "  /status                show connection state\n"
             "  /clear · /quit         clear chat or exit\n"
@@ -804,16 +996,16 @@ class SokiTradeTerminal(App[None]):
         self.push_screen(SetupHub(self.setup_status), self.setup_choice)
 
     def setup_choice(self, choice: str | None) -> None:
-        if choice == "model":
+        if choice == "hermes":
+            self.open_hermes()
+        elif choice == "model":
             self.open_model()
+        elif choice == "phone":
+            self.send_agent_message("Pair my Android phone")
         elif choice == "telegram":
-            self.open_telegram()
+            self.send_agent_message("Help me connect Telegram")
         elif choice == "mt5":
-            self.open_mt5()
-        elif choice == "mt5-login":
-            self.open_mt5_login()
-        elif choice == "install-mt5":
-            self.install_mt5()
+            self.send_agent_message("Help me connect MT5")
 
     def open_model(self) -> None:
         self.push_screen(
@@ -824,6 +1016,16 @@ class SokiTradeTerminal(App[None]):
     def model_submitted(self, submission: ModelSubmission | None) -> None:
         if submission is not None:
             self.connect_model(submission)
+
+    def open_hermes(self) -> None:
+        self.push_screen(
+            HermesScreen(self.setup_status.get("hermes", {})),
+            self.hermes_submitted,
+        )
+
+    def hermes_submitted(self, submission: HermesSubmission | None) -> None:
+        if submission is not None:
+            self.connect_hermes(submission)
 
     def open_telegram(self) -> None:
         self.push_screen(TelegramScreen(), self.telegram_submitted)
@@ -842,28 +1044,12 @@ class SokiTradeTerminal(App[None]):
         if submission is not None:
             self.connect_mt5(submission)
 
-    def open_mt5_login(self) -> None:
-        if not mt5_is_installed():
-            self.query_one("#chat-log", RichLog).write(
-                self._system_text(
-                    "MT5 is not installed, so I am downloading the official installer now. "
-                    "Finish installation, then run /mt5-login again."
-                )
-            )
-            self.install_mt5()
-            return
-        self.push_screen(MT5LoginScreen(), self.mt5_login_submitted)
-
-    def mt5_login_submitted(self, submission: MT5LoginSubmission | None) -> None:
-        if submission is not None:
-            self.launch_mt5_login(submission)
-
     def action_clear_chat(self) -> None:
         self.query_one("#chat-log", RichLog).clear()
-        self.query_one("#chat-log", RichLog).write(
-            self._agent_text("Fresh conversation. What can I take care of?")
-        )
+        self._write_agent_message("Fresh conversation. What can I take care of?")
         self.history.clear()
+        self.activity_items.clear()
+        self._render_activity()
 
     @work(exclusive=True, group="agent-chat")
     async def send_agent_message(self, message: str) -> None:
@@ -872,37 +1058,58 @@ class SokiTradeTerminal(App[None]):
         self.set_working(True)
         self.set_notice("Request in progress")
         try:
-            async with httpx.AsyncClient(timeout=90) as client:
-                response = await client.post(
-                    f"{self.api_url}/agent/chat",
-                    json={
-                        "message": message,
-                        "history": self.history[-20:],
-                        "experiment_id": self.experiment_id,
-                    },
-                )
+            body: dict[str, Any] | None = None
+            async with httpx.AsyncClient(timeout=90) as client, client.stream(
+                "POST",
+                f"{self.api_url}/agent/chat/stream",
+                json={
+                    "message": message,
+                    "history": self.history[-20:],
+                    "experiment_id": self.experiment_id,
+                    "session_id": self.session_id,
+                    "attachment_ids": self.pending_attachments,
+                },
+            ) as response:
                 response.raise_for_status()
-            body = response.json()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    if event.get("type") == "activity":
+                        self.update_activity(dict(event["activity"]))
+                    elif event.get("type") == "result":
+                        body = dict(event["response"])
+                    elif event.get("type") == "error":
+                        raise ValueError(str(event.get("detail", "Agent request failed")))
+            if body is None:
+                raise ValueError("The agent stream ended without a result.")
             reply = str(body["reply"])
             if body.get("experiment_id"):
                 self.experiment_id = str(body["experiment_id"])
-            self.query_one("#chat-log", RichLog).write(self._agent_text(reply))
+            self._write_agent_message(reply)
+            if body.get("proof"):
+                self.query_one("#chat-log", RichLog).write(self._proof_text(body["proof"]))
             self.history.extend(
                 (
                     {"role": "user", "content": message},
                     {"role": "assistant", "content": reply},
                 )
             )
+            self.pending_attachments.clear()
             action = str(body.get("action", "MESSAGE")).replace("_", " ").lower()
             if body.get("action") == "CONNECTION_CHANGED":
                 await self.refresh_setup()
             client_action = body.get("client_action")
             if client_action == "CONNECT_MODEL":
                 self.call_after_refresh(self.open_model)
+            elif client_action == "CONNECT_HERMES":
+                self.call_after_refresh(self.open_hermes)
             elif client_action == "CONNECT_TELEGRAM":
                 self.call_after_refresh(self.open_telegram)
             elif client_action == "CONNECT_MT5":
                 self.call_after_refresh(self.open_mt5)
+            elif client_action == "PAIR_PHONE":
+                self.create_phone_pairing()
             self.set_notice(f"Ready · {action}")
         except (httpx.HTTPError, KeyError, ValueError) as error:
             detail = response_detail(error)
@@ -914,6 +1121,43 @@ class SokiTradeTerminal(App[None]):
             self.set_working(False)
             field.disabled = False
             field.focus()
+
+    @work(exclusive=True, group="attachment-upload")
+    async def upload_attachment(self, raw_path: str) -> None:
+        path = Path(raw_path).expanduser()
+        if not path.is_file():
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text(f"File not found: {path}", warning=True)
+            )
+            return
+        if len(self.pending_attachments) >= 8:
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text("You can attach up to eight files per message.", warning=True)
+            )
+            return
+        self.set_notice(f"Uploading {path.name}…")
+        try:
+            async with httpx.AsyncClient(timeout=210) as client:
+                with path.open("rb") as source:
+                    response = await client.post(
+                        f"{self.api_url}/attachments",
+                        files={"file": (path.name, source)},
+                    )
+                response.raise_for_status()
+            attachment = response.json()
+            self.pending_attachments.append(str(attachment["attachment_id"]))
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text(
+                    f"Attached {attachment['name']} ({attachment['kind'].lower()}). "
+                    "It will be included with your next message."
+                )
+            )
+            self.set_notice(f"{len(self.pending_attachments)} attachment(s) ready")
+        except (httpx.HTTPError, KeyError, ValueError) as error:
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text(f"Upload failed: {response_detail(error)}", warning=True)
+            )
+            self.set_notice("Upload failed")
 
     @work(exclusive=True, group="model")
     async def connect_model(self, submission: ModelSubmission) -> None:
@@ -944,6 +1188,61 @@ class SokiTradeTerminal(App[None]):
                     warning=True,
                 )
             )
+
+    @work(exclusive=True, group="hermes")
+    async def connect_hermes(self, submission: HermesSubmission) -> None:
+        self.set_notice("Verifying Hermes runtime…")
+        try:
+            async with httpx.AsyncClient(timeout=75) as client:
+                response = await client.post(
+                    f"{self.api_url}/hermes/config",
+                    json={
+                        "url": submission.url,
+                        "api_key": submission.api_key,
+                        "model": submission.model,
+                        "persist": True,
+                    },
+                )
+                response.raise_for_status()
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text(f"Hermes connected: {submission.model}")
+            )
+            await self.refresh_setup()
+        except httpx.HTTPError as error:
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text(
+                    f"Hermes connection failed: {response_detail(error)}",
+                    warning=True,
+                )
+            )
+            self.set_notice("Hermes connection failed")
+
+    @work(exclusive=True, group="phone-pair")
+    async def create_phone_pairing(self) -> None:
+        self.set_notice("Creating one-use pairing code…")
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.post(
+                    f"{self.api_url}/pairing/sessions",
+                    json={"api_base_url": self.api_url, "prefer_lan": True},
+                )
+                response.raise_for_status()
+            pairing = response.json()
+            self.push_screen(
+                PhonePairScreen(
+                    str(pairing.get("qr_payload_compact") or pairing["qr_payload"]),
+                    str(pairing["expires_at"]),
+                )
+            )
+            self.set_notice("Pairing code ready · expires in five minutes")
+        except (httpx.HTTPError, KeyError, ValueError) as error:
+            self.query_one("#chat-log", RichLog).write(
+                self._system_text(
+                    f"Could not create phone pairing: {response_detail(error)}",
+                    warning=True,
+                )
+            )
+            self.set_notice("Phone pairing failed")
 
     @work(exclusive=True, group="telegram")
     async def connect_telegram(self, submission: TelegramSubmission) -> None:
@@ -1013,7 +1312,7 @@ class SokiTradeTerminal(App[None]):
             self.query_one("#chat-log", RichLog).write(
                 self._system_text(
                     f"Official installer downloaded to {installer}. "
-                    "Finish the signed installer, then return and run /mt5-login."
+                    "Finish the signed installer, then return and ask me to connect MT5."
                 )
             )
             self.set_notice("MT5 installer opened")
@@ -1022,53 +1321,6 @@ class SokiTradeTerminal(App[None]):
                 self._system_text(f"MT5 install failed: {error}", warning=True)
             )
             self.set_notice("MT5 install failed")
-
-    @work(exclusive=True, group="mt5-login")
-    async def launch_mt5_login(self, submission: MT5LoginSubmission) -> None:
-        if not submission.login or not submission.password or not submission.server:
-            self.query_one("#chat-log", RichLog).write(
-                self._system_text("Login, password, and broker server are required.", warning=True)
-            )
-            return
-        self.set_notice("Launching the official MT5 terminal…")
-        config_path = Path("data/mt5-login.ini").resolve()
-        try:
-            config_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            config_path.touch(exist_ok=True, mode=0o600)
-            chmod(config_path, 0o600)
-            config_path.write_text(
-                "\n".join(
-                    (
-                        "[Common]",
-                        f"Login={submission.login}",
-                        f"Server={submission.server}",
-                        f"Password={submission.password}",
-                        f"KeepPrivate={1 if submission.remember else 0}",
-                        "",
-                        "[Experts]",
-                        "AllowLiveTrading=0",
-                        "Enabled=0",
-                    )
-                ),
-                encoding="utf-8",
-            )
-            chmod(config_path, 0o600)
-            launch_mt5_with_config(config_path)
-            self.query_one("#chat-log", RichLog).write(
-                self._system_text(
-                    "MT5 launched with the requested account. Automated trading is off. "
-                    "Complete any broker or passkey prompt in MT5."
-                )
-            )
-            self.set_notice("MT5 login launched")
-            await asyncio.sleep(45)
-        except OSError as error:
-            self.query_one("#chat-log", RichLog).write(
-                self._system_text(f"Could not launch MT5: {error}", warning=True)
-            )
-        finally:
-            config_path.unlink(missing_ok=True)
-
 
 def response_detail(error: Exception) -> str:
     if isinstance(error, httpx.HTTPStatusError):
@@ -1213,10 +1465,10 @@ async def check_api(api_url: str) -> int:
             response.raise_for_status()
         status = response.json()
     except (httpx.HTTPError, KeyError) as error:
-        print(f"Soki Trade terminal check failed: {error}")
+        print(f"soki code terminal check failed: {error}")
         return 1
     print(
-        "Soki Trade ready | "
+        "soki code ready | "
         f"agent={status['agent']['ready']} | "
         f"model={status['model']['connected']} | "
         f"data={status['market_data']['status']} | "
@@ -1227,11 +1479,11 @@ async def check_api(api_url: str) -> int:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Soki Trade native agent terminal")
+    parser = argparse.ArgumentParser(description="soki code native agent terminal")
     parser.add_argument(
         "--api-url",
         default=getenv("QFORGE_API_URL", "http://127.0.0.1:8000"),
-        help="Soki Trade API base URL",
+        help="soki code API base URL",
     )
     parser.add_argument("--check", action="store_true", help="verify terminal connectivity")
     return parser.parse_args()

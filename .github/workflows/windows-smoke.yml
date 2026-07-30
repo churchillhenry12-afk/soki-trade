@@ -1,4 +1,4 @@
-name: Windows installer smoke
+name: Unified product installer
 
 on:
   push:
@@ -9,32 +9,52 @@ permissions:
   contents: read
 
 jobs:
-  release-installer:
-    runs-on: windows-latest
-    timeout-minutes: 15
+  install-and-verify:
+    name: Soki + bundled runtime (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
     steps:
-      - name: Install the public GitHub release
-        shell: powershell
-        run: |
-          $env:SOKI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "SokiTrade"
-          $env:SOKI_BIN_DIR = Join-Path $env:RUNNER_TEMP "SokiBin"
-          $installer = Join-Path $env:RUNNER_TEMP "install.ps1"
-          Invoke-WebRequest `
-            -Uri "https://github.com/churchillhenry12-afk/soki-trade/releases/latest/download/install.ps1" `
-            -OutFile $installer `
-            -UseBasicParsing
-          powershell `
-            -NoProfile `
-            -ExecutionPolicy Bypass `
-            -File $installer
+      - uses: actions/checkout@v4
 
-      - name: Start the packaged API and verify the terminal
+      - name: Install the complete Windows product
+        if: runner.os == 'Windows'
         shell: powershell
+        env:
+          SOKI_REF: ${{ github.head_ref || github.ref_name }}
         run: |
-          $env:SOKI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "SokiTrade"
-          $launcher = Join-Path $env:SOKI_INSTALL_DIR "soki.ps1"
+          $env:SOKI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "SokiCode"
+          $env:SOKI_BIN_DIR = Join-Path $env:RUNNER_TEMP "SokiBin"
           powershell `
             -NoProfile `
             -ExecutionPolicy Bypass `
-            -File $launcher `
-            --check
+            -File .\packaging\install.ps1
+
+      - name: Verify and uninstall the complete Windows product
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $env:SOKI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "SokiCode"
+          $env:SOKI_BIN_DIR = Join-Path $env:RUNNER_TEMP "SokiBin"
+          & (Join-Path $env:SOKI_BIN_DIR "soki-code.cmd") terminal --check
+          if ($LASTEXITCODE -ne 0) { throw "Installed Soki terminal check failed." }
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\packaging\uninstall.ps1
+          if (Test-Path (Join-Path $env:SOKI_INSTALL_DIR "runtime")) {
+            throw "Bundled runtime remained after uninstall."
+          }
+
+      - name: Install the complete macOS product
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          SOKI_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          export SOKI_INSTALL_DIR="$RUNNER_TEMP/SokiCode"
+          export SOKI_BIN_DIR="$RUNNER_TEMP/SokiBin"
+          bash packaging/install.sh
+          "$SOKI_BIN_DIR/soki-code" terminal --check
+          bash packaging/uninstall.sh
+          test ! -e "$SOKI_INSTALL_DIR/runtime"

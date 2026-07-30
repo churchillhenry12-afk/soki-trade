@@ -103,7 +103,7 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
     try {
       await api.connectTelegram({ bot_token: telegramToken, chat_id: telegramChat });
       await onRefresh();
-      setNotice("Telegram bot answered and received the Soki Trade test message.");
+      setNotice("Telegram bot answered and received the Soky Code test message.");
       setTelegramToken("");
     } catch (error) {
       setNotice(`Telegram connection failed: ${(error as Error).message}`);
@@ -135,12 +135,14 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
     }
   }
 
-  const coreReady = setup.model.connected && setup.market_data.status === "READY";
+  const intelligenceReady = setup.model.connected || Boolean(setup.hermes?.verified);
+  const marketReady = ["READY", "MOCK"].includes(setup.market_data.status);
+  const coreReady = intelligenceReady && marketReady;
 
   return (
     <div className="setup-page">
       <header className="setup-header">
-        <div className="wordmark"><span>S</span> SOKI TRADE</div>
+        <div className="wordmark"><span>S</span> SOKY CODE</div>
         <p>Agent setup</p>
         <span className="safety-note">Research and paper only · live orders disabled</span>
       </header>
@@ -158,9 +160,9 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
           </div>
           <div>
             <span className="eyebrow">Your agentic operations workspace</span>
-            <h1>{coreReady ? "Soki Trade is ready to talk." : "Bring Soki Trade online."}</h1>
+            <h1>{coreReady ? "Soky Code is ready to work." : "Bring Soky Code online."}</h1>
             <p>
-              Connect Soki’s intelligence and tools. Once online, the agent can handle
+              Connect Soky’s intelligence and tools. Once online, the agent can handle
               general tasks, manage these services through chat, and run trading research.
             </p>
           </div>
@@ -171,7 +173,10 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
             <div className="setup-card__heading">
               <span className="step-number">1</span>
               <div><h2>Intelligence</h2><p>The model that powers every agent task.</p></div>
-              <StatePill connected={setup.model.connected} />
+              <StatePill
+                connected={intelligenceReady}
+                label={setup.hermes?.verified ? "Hermes connected" : undefined}
+              />
             </div>
             <form className="connection-form" onSubmit={(event) => void connectModel(event)}>
               <label>Provider
@@ -234,8 +239,8 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
               <span className="step-number">2</span>
               <div><h2>Market data</h2><p>Real candles used by the backtester.</p></div>
               <StatePill
-                connected={setup.market_data.status === "READY"}
-                label={setup.market_data.status === "READY" ? "Real feed ready" : "Unavailable"}
+                connected={marketReady}
+                label={setup.market_data.status === "MOCK" ? "Demo feed ready" : "Real feed ready"}
               />
             </div>
             <div className="connection-summary">
@@ -337,7 +342,7 @@ export function SetupWizard({ setup, onRefresh, onOpenAgent }: Props) {
             <span>Telegram and MT5 can be connected now or later from Agent setup.</span>
           </div>
           <button className="open-agent" disabled={!coreReady} onClick={onOpenAgent}>
-            Open Soki Trade <span>→</span>
+            Open Soky Code <span>→</span>
           </button>
         </footer>
       </main>

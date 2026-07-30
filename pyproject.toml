@@ -14,6 +14,7 @@ dependencies = [
   "pydantic-settings>=2.10,<3",
   "psycopg[binary]>=3.2,<4",
   "python-multipart>=0.0.20,<1",
+  "qrcode>=8,<9",
   "sqlalchemy>=2.0,<3",
   "structlog>=25.4,<26",
   "textual>=6,<7",
@@ -27,6 +28,7 @@ dev = [
   "pytest>=8.4,<9",
   "pytest-asyncio>=1.1,<2",
   "ruff>=0.12,<1",
+  "types-qrcode>=8,<9",
 ]
 
 [tool.pytest.ini_options]

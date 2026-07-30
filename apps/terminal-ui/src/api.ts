@@ -91,6 +91,7 @@ export const api = {
     message: string;
     history: ChatTurn[];
     experiment_id: string | null;
+    session_id: string;
   }) =>
     request<AgentChatResponse>("/agent/chat", {
       method: "POST",

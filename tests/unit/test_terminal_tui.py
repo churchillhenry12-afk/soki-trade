@@ -4,7 +4,9 @@ from qforge_tui.main import (
     MAC_MT5_URL,
     SOKI_MARK,
     WINDOWS_MT5_URL,
+    HermesScreen,
     ModelScreen,
+    PhonePairScreen,
     SetupHub,
     SokiTradeTerminal,
     available_path,
@@ -35,18 +37,30 @@ async def test_terminal_mounts_as_centered_single_conversation() -> None:
         assert SOKI_MARK in mark.render().plain
         assert app.query_one("#agent-input", Input).placeholder is not None
         assert app.query_one("#chat-log", RichLog).region.height >= 5
-        assert "LIVE ORDERS OFF" in app.query_one("#connection-strip").render().plain
+        assert "PAPER ONLY" in app.query_one("#connection-strip").render().plain
         app.set_working(True)
-        assert app.query_one("#working-line").has_class("active")
-        assert "SOKI" in app.query_one("#working-line").render().plain
+        activity = app.query_one("#activity-panel")
+        assert activity.has_class("active")
+        assert "work trace" in activity.render().plain
+        app.update_activity(
+            {
+                "id": "runtime",
+                "label": "Received the agent response",
+                "state": "completed",
+                "detail": "hermes",
+            }
+        )
+        assert "Received the agent response" in activity.render().plain
         app.set_working(False)
-        assert not app.query_one("#working-line").has_class("active")
-        assert app.query_one("#working-line").render().plain == ""
+        assert activity.has_class("active")
 
         app.action_setup()
         await pilot.pause()
         assert isinstance(app.screen, SetupHub)
-        assert app.screen.query_one("#hub-model").label.plain == "1  MODEL"
+        assert app.screen.query_one("#hub-hermes").label.plain == "HERMES RUNTIME"
+        assert app.screen.query_one("#hub-model").label.plain == "FALLBACK MODEL"
+        assert app.screen.query_one("#hub-phone").label.plain == "PAIR PHONE"
+        assert len(app.screen.query("#hub-login")) == 0
 
         await pilot.press("escape")
         app.query_one("#agent-input", Input).value = "/help"
@@ -76,3 +90,33 @@ async def test_model_setup_scans_before_selecting_a_model() -> None:
             app.screen.query_one("#model-scan", Button).label.plain
             == "SCAN AVAILABLE MODELS"
         )
+
+
+async def test_hermes_setup_and_pairing_qr_are_first_class() -> None:
+    app = SokiTradeTerminal("http://127.0.0.1:9")
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.push_screen(
+            HermesScreen(
+                {
+                    "url": "http://127.0.0.1:8642",
+                    "model": "hermes-4",
+                }
+            )
+        )
+        await pilot.pause()
+
+        assert app.screen.query_one("#hermes-url", Input).value.endswith(":8642")
+        assert app.screen.query_one("#hermes-key", Input).password is True
+        assert app.screen.query_one("#hermes-model", Input).value == "hermes-4"
+
+        await pilot.press("escape")
+        app.push_screen(
+            PhonePairScreen(
+                "soki:1:Ej5FZ-ibEtOkVkJmFBdAAA:abcdefghijklmnop",
+                "soon",
+            )
+        )
+        await pilot.pause()
+        assert app.screen.query_one("#phone-qr").render().plain.strip()
+        assert app.screen.query_one("#phone-pair").region.height <= 24
+        assert app.screen.query_one("#phone-close").region.bottom <= 24

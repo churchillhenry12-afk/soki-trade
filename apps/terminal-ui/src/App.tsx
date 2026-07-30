@@ -49,12 +49,12 @@ export default function App() {
         <span className="boot-mark">S</span>
         <strong>
           {setupError
-            ? "Connect this interface to your Soki agent"
-            : "Starting Soki Trade…"}
+            ? "Connect this interface to your Soky agent"
+            : "Starting Soky Code…"}
         </strong>
         <p>
           {setupError
-            ? "Install and start Soki Trade on this computer, then retry the connection."
+            ? "Install and start Soky Code on this computer, then retry the connection."
             : "Checking the agent and its connections."}
         </p>
         {setupError ? (
@@ -84,7 +84,9 @@ export default function App() {
     );
   }
 
-  const coreReady = setup.model.connected && setup.market_data.status === "READY";
+  const intelligenceReady = setup.model.connected || Boolean(setup.hermes?.verified);
+  const coreReady =
+    intelligenceReady && ["READY", "MOCK"].includes(setup.market_data.status);
 
   return view === "setup" || !coreReady ? (
     <SetupWizard setup={setup} onRefresh={refreshSetup} onOpenAgent={openAgent} />

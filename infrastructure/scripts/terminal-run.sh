@@ -21,11 +21,11 @@ trap cleanup EXIT INT TERM
 if ! curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
   export PYTHONPATH="packages/shared/src:apps/api/src"
   export QFORGE_DEMO_MODE="false"
-  uv run uvicorn qforge_api.main:app --host 127.0.0.1 --port 8000 >/tmp/qforge-api.log 2>&1 &
+  uv run uvicorn qforge_api.main:app --host 0.0.0.0 --port 8000 >/tmp/qforge-api.log 2>&1 &
   api_pid=$!
   api_started="true"
 
-  for _ in {1..40}; do
+  for _ in {1..200}; do
     if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
       break
     fi
@@ -38,10 +38,10 @@ if ! curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
   fi
 fi
 
-echo "Starting Soki Trade"
+echo "Starting soki code"
 echo "One terminal · one agent conversation · /setup for connections · /help for commands"
 echo "Real candles download automatically. Live execution remains disabled."
 sleep 0.4
 
 export PYTHONPATH="packages/shared/src:apps/terminal-tui/src"
-uv run python -m qforge_tui.main
+uv run python -m qforge_tui.main "$@"

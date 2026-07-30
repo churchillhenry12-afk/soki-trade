@@ -14,13 +14,43 @@ done
 cd -P "$(dirname "$script_path")"
 
 if ! command -v uv >/dev/null 2>&1; then
-  echo "Soki Trade needs uv. Install it from https://docs.astral.sh/uv/"
+  echo "soki code needs uv. Install it from https://docs.astral.sh/uv/"
   exit 1
 fi
 
 if [[ ! -x .venv/bin/python ]]; then
-  echo "Preparing Soki Trade for first launch..."
+  echo "Preparing soki code for first launch..."
   uv sync
 fi
 
-exec ./infrastructure/scripts/terminal-run.sh
+printf '\033[38;2;167;183;255m'
+echo "  ┏━┓ ┏━┓ ╻┏ ╻    ┏━╸ ┏━┓ ┏━┓ ┏━╸"
+echo "  ┗━┓ ┃ ┃ ┣┻┓┃    ┃   ┃ ┃ ┃ ┃ ┣╸ "
+echo "  ┗━┛ ┗━┛ ╹ ╹╹    ┗━╸ ┗━┛ ┗━┛ ┗━╸"
+printf '\033[0m'
+printf '\033[38;2;125;132;148m  local automation · guarded trading\n\033[0m'
+echo ""
+
+mode="${1:-desktop}"
+if [[ "$#" -gt 0 ]]; then
+  shift
+fi
+
+case "$mode" in
+  desktop|web)
+    exec ./infrastructure/scripts/run.sh "$@"
+    ;;
+  terminal)
+    exec ./infrastructure/scripts/terminal-run.sh "$@"
+    ;;
+  android-link)
+    exec make android-link
+    ;;
+  android-install)
+    exec make android-install
+    ;;
+  *)
+    echo "Usage: ./soki [desktop|terminal|android-link|android-install]"
+    exit 2
+    ;;
+esac

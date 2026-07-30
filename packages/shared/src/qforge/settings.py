@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     provider_config_path: str = "data/provider-config.json"
     gateway_config_path: str = "data/gateway-config.json"
     market_data_directory: str = "data/market"
+    hermes_url: str = ""
+    hermes_api_key: str = ""
+    hermes_model: str = "hermes"
+    hermes_timeout_seconds: float = 180
+    hermes_config_path: str = "data/hermes-config.json"
+    attachment_directory: str = "data/attachments"
+    attachment_max_bytes: int = 200 * 1024 * 1024
 
     @property
     def allowed_origins(self) -> list[str]:
