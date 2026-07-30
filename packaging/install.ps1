@@ -105,6 +105,12 @@ try {
         -HermesHome $hermesHome `
         -SkipSetup `
         -NonInteractive
+
+    # Hermes intentionally points uv at its own venv while it installs. Since
+    # PowerShell child scripts can leave environment variables in this process,
+    # clear that internal build context before syncing the separate Soki app.
+    Remove-Item Env:UV_PROJECT_ENVIRONMENT -ErrorAction SilentlyContinue
+    Remove-Item Env:VIRTUAL_ENV -ErrorAction SilentlyContinue
     $gitCommand = Find-SokiCommand -Name "git" -Candidates @(
         (Join-Path $hermesHome "git\cmd\git.exe"),
         (Join-Path $hermesHome "git\bin\git.exe"),
