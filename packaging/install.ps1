@@ -251,11 +251,8 @@ try {
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "Computer-control support will finish installing during Soki setup."
     }
-    & $hermesCommand gateway restart
-    if ($LASTEXITCODE -ne 0) {
-        Invoke-Checked -Command $hermesCommand -CommandArguments @("gateway", "install")
-        Invoke-Checked -Command $hermesCommand -CommandArguments @("gateway", "start")
-    }
+    Invoke-Checked -Command $hermesCommand -CommandArguments @("gateway", "install")
+    Invoke-Checked -Command $hermesCommand -CommandArguments @("gateway", "start")
 
     $databasePath = (Join-Path $sokiDataDirectory "qforge.db").Replace("\", "/")
     $launcherPath = Join-Path $sokiBinDirectory "soki-code.cmd"

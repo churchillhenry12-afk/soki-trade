@@ -160,10 +160,8 @@ fi
 "$hermes_command" tools enable --platform api_server computer_use
 "$hermes_command" tools post-setup cua_driver || \
   echo "Computer-control support will finish installing during Soki setup."
-if ! "$hermes_command" gateway restart; then
-  "$hermes_command" gateway install
-  "$hermes_command" gateway start
-fi
+"$hermes_command" gateway install
+"$hermes_command" gateway start
 
 chmod +x \
   "$soki_app_directory/soki" \

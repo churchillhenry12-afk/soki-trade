@@ -431,7 +431,8 @@ async def enable_local_hermes(
                 await run("config", "set", "model.api_key", model_api_key)
         await run("config", "set", "model.default", model)
         await run("config", "set", "model.base_url", normalized_url)
-    await run("gateway", "restart")
+    await run("gateway", "install")
+    await run("gateway", "start")
     return {
         "url": discovered["url"],
         "api_key": runtime_api_key,
