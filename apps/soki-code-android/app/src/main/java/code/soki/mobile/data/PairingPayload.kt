@@ -12,9 +12,25 @@ data class PairingPayload(
 ) {
     companion object {
         fun parse(raw: String): PairingPayload {
-            if (raw.startsWith("soki:")) {
-                return parseCompact(raw)
+            val value = raw.trim()
+            return try {
+                if (value.startsWith("soki:")) {
+                    parseCompact(value)
+                } else {
+                    parseJson(value)
+                }
+            } catch (error: Exception) {
+                if (error is IllegalArgumentException && error.message?.isNotBlank() == true) {
+                    throw error
+                }
+                throw IllegalArgumentException(
+                    "This pairing code is invalid or belongs to an older Soki build.",
+                    error,
+                )
             }
+        }
+
+        private fun parseJson(raw: String): PairingPayload {
             val payload = JSONObject(raw)
             require(payload.optInt("v") == 1) { "Unsupported pairing code version." }
             require(payload.optString("type") == "soki-code-pairing") {

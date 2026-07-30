@@ -16,6 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import okio.BufferedSink
 import okio.source
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -143,7 +144,14 @@ class SokiApi {
         client.newCall(request).execute().use { response ->
             val text = response.body.string()
             if (!response.isSuccessful) throw ApiException(errorDetail(text, response.code), response.code)
-            return JSONObject(text)
+            return try {
+                JSONObject(text)
+            } catch (error: JSONException) {
+                throw ApiException(
+                    "The laptop returned an invalid response. Restart Soki Code and pair again.",
+                    response.code,
+                )
+            }
         }
     }
 
@@ -151,12 +159,27 @@ class SokiApi {
         client.newCall(request).execute().use { response ->
             val text = response.body.string()
             if (!response.isSuccessful) throw ApiException(errorDetail(text, response.code), response.code)
-            return JSONArray(text)
+            return try {
+                JSONArray(text)
+            } catch (error: JSONException) {
+                throw ApiException(
+                    "The laptop returned an invalid response. Restart Soki Code and pair again.",
+                    response.code,
+                )
+            }
         }
     }
 
     private fun errorDetail(text: String, status: Int): String {
-        return runCatching { JSONObject(text).optString("detail") }
+        return runCatching {
+            val detail = JSONObject(text).opt("detail")
+            when (detail) {
+                is String -> detail
+                is JSONObject -> detail.optString("message").ifBlank { detail.toString() }
+                null, JSONObject.NULL -> ""
+                else -> detail.toString()
+            }
+        }
             .getOrNull()
             ?.takeIf { it.isNotBlank() }
             ?: "The laptop returned HTTP $status."

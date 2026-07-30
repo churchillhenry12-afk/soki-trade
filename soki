@@ -28,7 +28,7 @@ echo "  ┏━┓ ┏━┓ ╻┏ ╻    ┏━╸ ┏━┓ ┏━┓ ┏━�
 echo "  ┗━┓ ┃ ┃ ┣┻┓┃    ┃   ┃ ┃ ┃ ┃ ┣╸ "
 echo "  ┗━┛ ┗━┛ ╹ ╹╹    ┗━╸ ┗━┛ ┗━┛ ┗━╸"
 printf '\033[0m'
-printf '\033[38;2;125;132;148m  local agent · research and paper trading\n\033[0m'
+printf '\033[38;2;125;132;148m  local automation · guarded trading\n\033[0m'
 echo ""
 
 mode="${1:-desktop}"

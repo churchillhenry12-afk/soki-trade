@@ -112,6 +112,7 @@ def test_production_runtime_is_ready_without_optional_ai(tmp_path: Path, monkeyp
     monkeypatch.setenv("QFORGE_PROVIDER_CONFIG_PATH", str(tmp_path / "provider.json"))
     monkeypatch.setenv("QFORGE_MARKET_DATA_DIRECTORY", str(tmp_path / "market"))
     monkeypatch.setenv("QFORGE_DEMO_MODE", "false")
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes"))
     with TestClient(app) as client:
         status_response = client.get("/system/status")
         assert status_response.status_code == 200
@@ -258,11 +259,7 @@ def test_agent_chat_manages_connections_and_general_tasks(tmp_path: Path, monkey
         ) as streamed:
             assert streamed.status_code == 200
             events = [json.loads(line) for line in streamed.iter_lines() if line]
-        activities = [
-            event["activity"]
-            for event in events
-            if event.get("type") == "activity"
-        ]
+        activities = [event["activity"] for event in events if event.get("type") == "activity"]
         assert {activity["id"] for activity in activities} >= {
             "proof",
             "understand",
@@ -275,8 +272,7 @@ def test_agent_chat_manages_connections_and_general_tasks(tmp_path: Path, monkey
             for activity in activities
         )
         assert any(
-            activity["id"] == "work" and activity["state"] == "running"
-            for activity in activities
+            activity["id"] == "work" and activity["state"] == "running" for activity in activities
         )
         result = next(event["response"] for event in events if event["type"] == "result")
         assert result["proof"]["status"] == "VERIFIED"
@@ -299,10 +295,7 @@ def test_agent_chat_manages_connections_and_general_tasks(tmp_path: Path, monkey
 
         async def raw_tool_call(_prompt: str, *, system_prompt: str | None = None) -> str:
             del system_prompt
-            return (
-                "<tool_call>\n<function=list_connections>\n"
-                "</function>\n</tool_call>"
-            )
+            return "<tool_call>\n<function=list_connections>\n</function>\n</tool_call>"
 
         monkeypatch.setattr(app.state.model_router, "complete", raw_tool_call)
         recovered = client.post(
@@ -476,10 +469,12 @@ def test_qr_pairing_is_one_time_authenticated_and_revocable(
     with TestClient(app) as client:
         created = client.post(
             "/pairing/sessions",
-            json={"api_base_url": "http://127.0.0.1:8000"},
+            json={"api_base_url": "http://127.0.0.1:8000", "prefer_lan": False},
         )
         assert created.status_code == 201
-        qr_payload = compact_pairing_payload(created.json()["qr_payload"])
+        legacy_payload = json.loads(created.json()["qr_payload"])
+        assert legacy_payload["type"] == "soki-code-pairing"
+        qr_payload = compact_pairing_payload(created.json()["qr_payload_compact"])
         assert qr_payload["api_base_url"] == "http://127.0.0.1:8000"
 
         claim = client.post(
@@ -572,9 +567,9 @@ def test_attachments_are_stored_forwarded_and_isolated_by_device(
 
         created = client.post(
             "/pairing/sessions",
-            json={"api_base_url": "http://127.0.0.1:8000"},
+            json={"api_base_url": "http://127.0.0.1:8000", "prefer_lan": False},
         )
-        payload = compact_pairing_payload(created.json()["qr_payload"])
+        payload = compact_pairing_payload(created.json()["qr_payload_compact"])
         claimed = client.post(
             "/pairing/claim",
             json={

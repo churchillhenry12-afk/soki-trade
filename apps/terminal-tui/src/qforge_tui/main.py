@@ -1224,13 +1224,13 @@ class SokiTradeTerminal(App[None]):
             async with httpx.AsyncClient(timeout=20) as client:
                 response = await client.post(
                     f"{self.api_url}/pairing/sessions",
-                    json={"api_base_url": self.api_url},
+                    json={"api_base_url": self.api_url, "prefer_lan": True},
                 )
                 response.raise_for_status()
             pairing = response.json()
             self.push_screen(
                 PhonePairScreen(
-                    str(pairing["qr_payload"]),
+                    str(pairing.get("qr_payload_compact") or pairing["qr_payload"]),
                     str(pairing["expires_at"]),
                 )
             )

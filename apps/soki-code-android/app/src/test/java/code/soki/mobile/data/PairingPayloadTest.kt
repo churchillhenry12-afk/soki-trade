@@ -33,4 +33,15 @@ class PairingPayloadTest {
         assertEquals("secret-code", payload.code)
         assertEquals("http://127.0.0.1:8000", payload.apiBaseUrl)
     }
+
+    @Test
+    fun parsesCompactWifiPairingPayload() {
+        val payload = PairingPayload.parse(
+            "soki:1:Ej5FZ-ibEtOkVkJmFBdAAA:secret-code:aHR0cDovLzE5Mi4xNjguMTAwLjEwOjgwMDA",
+        )
+
+        assertEquals("123e4567-e89b-12d3-a456-426614174000", payload.pairingId)
+        assertEquals("secret-code", payload.code)
+        assertEquals("http://192.168.100.10:8000", payload.apiBaseUrl)
+    }
 }

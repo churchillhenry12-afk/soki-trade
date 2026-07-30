@@ -21,7 +21,7 @@ trap cleanup EXIT INT TERM
 if ! curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
   export PYTHONPATH="packages/shared/src:apps/api/src"
   export QFORGE_DEMO_MODE="false"
-  uv run uvicorn qforge_api.main:app --host 127.0.0.1 --port 8000 >/tmp/qforge-api.log 2>&1 &
+  uv run uvicorn qforge_api.main:app --host 0.0.0.0 --port 8000 >/tmp/qforge-api.log 2>&1 &
   api_pid=$!
   api_started="true"
 

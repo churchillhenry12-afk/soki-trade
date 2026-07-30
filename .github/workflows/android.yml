@@ -1,0 +1,44 @@
+name: Android client
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+
+      - name: Test and build the replacement APK
+        working-directory: apps/soki-code-android
+        run: |
+          ./gradlew testDebugUnitTest assembleDebug
+
+      - name: Verify the shipped network policy and upgrade identity
+        shell: bash
+        run: |
+          apk="apps/soki-code-android/app/build/outputs/apk/debug/app-debug.apk"
+          apkanalyzer manifest print "$apk" > "$RUNNER_TEMP/soki-manifest.xml"
+          grep -F 'package="code.soki.mobile"' "$RUNNER_TEMP/soki-manifest.xml"
+          grep -F 'android:versionCode="2"' "$RUNNER_TEMP/soki-manifest.xml"
+          grep -F 'android:usesCleartextTraffic="true"' "$RUNNER_TEMP/soki-manifest.xml"
+          grep -F 'android:networkSecurityConfig="@xml/network_security_config"' \
+            "$RUNNER_TEMP/soki-manifest.xml"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soki-code-android-debug
+          path: apps/soki-code-android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

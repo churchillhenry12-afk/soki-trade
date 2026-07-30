@@ -592,10 +592,36 @@ function SettingsDialog({
           <span className={setup?.hermes.verified ? "status-dot online" : "status-dot"} />
           <div><strong>Agent runtime</strong><small>{setup?.hermes.verified ? "Connected" : "Not connected"}</small></div>
         </div>
+        {setup?.desktop_control?.permission_required && (
+          <p className="field-error">
+            Desktop control needs Screen Recording permission for CuaDriver in macOS System Settings.
+          </p>
+        )}
         <label>Runtime URL<input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="http://127.0.0.1:..." /></label>
         <label>API key<input type="password" value={key} onChange={(event) => setKey(event.target.value)} placeholder="••••••••" /></label>
         <label>Model<input value={model} onChange={(event) => setModel(event.target.value)} /></label>
         {error && <p className="field-error">{error}</p>}
+        {setup?.hermes.local_installed && !setup.hermes.verified && (
+          <button
+            className="primary-button"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              setError("");
+              try {
+                await api.enableLocalHermes();
+                onSaved();
+                onClose();
+              } catch (caught) {
+                setError(caught instanceof Error ? caught.message : "Could not enable Hermes.");
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? "Starting Hermes…" : "Use installed Hermes Agent"}
+          </button>
+        )}
         <button
           className="primary-button"
           disabled={saving || !url || !key}
@@ -641,7 +667,7 @@ function PairDialog({ onClose }: { onClose: () => void }) {
           <>
             <div className="qr-frame"><QRCodeSVG value={pairing.qr_payload} size={210} level="M" /></div>
             <h3>Scan with the Soki Android app</h3>
-            <p>The code expires in five minutes and can only be used once.</p>
+            <p>Same Wi-Fi · {pairing.api_base_url.replace(/^https?:\/\//, "")} · expires in five minutes.</p>
           </>
         ) : <div className="dialog-loading">{error || "Creating a secure code…"}</div>}
       </div>

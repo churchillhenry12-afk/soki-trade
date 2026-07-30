@@ -24,5 +24,7 @@ data/*.db-*
 data/provider-config.json
 data/gateway-config.json
 data/hermes-config.json
+data/attachments/*
+!data/attachments/.gitkeep
 data/market/*
 !data/market/.gitkeep

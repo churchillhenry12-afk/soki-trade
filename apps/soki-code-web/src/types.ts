@@ -5,6 +5,12 @@ export type HermesStatus = {
   verified: boolean;
   url: string;
   last_error: string;
+  model?: string;
+  server_tools?: boolean;
+  streaming?: boolean;
+  approvals?: boolean;
+  local_installed?: boolean;
+  local_api_enabled?: boolean;
 };
 
 export type SetupStatus = {
@@ -13,9 +19,18 @@ export type SetupStatus = {
     ready: boolean;
     runtime: string;
     execution: string;
+    trading_execution?: string;
     proof_loop: string;
   };
   hermes: HermesStatus;
+  desktop_control?: {
+    installed: boolean;
+    ready: boolean;
+    permission_required: boolean;
+    status: string;
+    accessibility?: boolean;
+    screen_recording?: boolean;
+  };
   market_data: Record<string, string | boolean>;
   telegram: Record<string, string | boolean>;
   mt5: Record<string, string | boolean>;
@@ -62,6 +77,8 @@ export type PairingSession = {
   pairing_id: string;
   expires_at: string;
   qr_payload: string;
+  qr_payload_compact: string;
+  api_base_url: string;
 };
 
 export type PairedDevice = {

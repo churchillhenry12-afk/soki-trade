@@ -4,6 +4,32 @@ Set-StrictMode -Version Latest
 $projectDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $projectDirectory
 
+$mode = "desktop"
+$launcherArguments = @()
+if ($args.Count -gt 0) {
+    if ($args[0] -in @("desktop", "web", "terminal")) {
+        $mode = [string] $args[0]
+        if ($args.Count -gt 1) {
+            $launcherArguments = @($args[1..($args.Count - 1)])
+        }
+    }
+    else {
+        # Flags such as --check belong to the terminal client.
+        $mode = "terminal"
+        $launcherArguments = @($args)
+    }
+}
+
+Write-Host ""
+Write-Host "  S O K I   C O D E" -ForegroundColor Magenta
+Write-Host "  local automation - guarded trading" -ForegroundColor DarkGray
+Write-Host ""
+
+if ($mode -in @("desktop", "web")) {
+    & (Join-Path $projectDirectory "infrastructure\scripts\run.ps1") @launcherArguments
+    exit 0
+}
+
 function Test-SokiApi {
     try {
         $health = Invoke-RestMethod `
@@ -29,11 +55,11 @@ function Get-Port8000Owner {
     }
 }
 
-function Get-WindowsProcessInfo([int] $processId) {
+function Get-WindowsProcessInfo([int] $ownerProcessId) {
     try {
         return Get-CimInstance `
             -ClassName Win32_Process `
-            -Filter "ProcessId = $processId" `
+            -Filter "ProcessId = $ownerProcessId" `
             -ErrorAction Stop
     }
     catch {
@@ -41,21 +67,21 @@ function Get-WindowsProcessInfo([int] $processId) {
     }
 }
 
-function Stop-WindowsProcessTree([int] $processId) {
-    & taskkill.exe /PID $processId /T /F 2>$null | Out-Null
+function Stop-WindowsProcessTree([int] $ownerProcessId) {
+    & taskkill.exe /PID $ownerProcessId /T /F 2>$null | Out-Null
 }
 
 $uvCommand = Get-Command uv -ErrorAction SilentlyContinue
 if ($null -eq $uvCommand) {
-    Write-Error "Soki Trade needs uv. Re-run the official Soki Trade installer."
+    Write-Error "Soki Code needs uv. Re-run the official Soki Code installer."
     exit 1
 }
 
 if (-not (Test-Path (Join-Path $projectDirectory ".venv\Scripts\python.exe"))) {
-    Write-Host "Preparing Soki Trade for first launch..."
+    Write-Host "Preparing Soki Code for first launch..."
     & $uvCommand.Source sync
     if ($LASTEXITCODE -ne 0) {
-        throw "Unable to prepare the Soki Trade Python environment."
+        throw "Unable to prepare the Soki Code Python environment."
     }
 }
 
@@ -80,7 +106,7 @@ try {
                 ""
             }
             if ($existingCommandLine -match "qforge_api\.main:app") {
-                Write-Host "Removing a stale Soki Trade API process..."
+                Write-Host "Removing a stale Soki Code API process..."
                 Stop-WindowsProcessTree $existingProcessId
                 for ($attempt = 0; $attempt -lt 50; $attempt++) {
                     Start-Sleep -Milliseconds 100
@@ -98,14 +124,14 @@ try {
                 }
                 throw (
                     "Port 8000 is already used by $existingProcessName " +
-                    "(PID $existingProcessId). Close that application, then run soki-trade again."
+                    "(PID $existingProcessId). Close that application, then run soki-code again."
                 )
             }
         }
 
         $env:PYTHONPATH = "packages/shared/src;apps/api/src"
         $env:QFORGE_DEMO_MODE = "false"
-        $logDirectory = Join-Path $env:TEMP "soki-trade"
+        $logDirectory = Join-Path $env:TEMP "soki-code"
         $apiOutputLog = Join-Path $logDirectory "api.log"
         $apiErrorLog = Join-Path $logDirectory "api-error.log"
         New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
@@ -117,7 +143,7 @@ try {
                 "uvicorn",
                 "qforge_api.main:app",
                 "--host",
-                "127.0.0.1",
+                "0.0.0.0",
                 "--port",
                 "8000"
             ) `
@@ -148,7 +174,7 @@ try {
 
         if (-not $apiReady) {
             Write-Host ""
-            Write-Host "Soki Trade API startup diagnostics" -ForegroundColor Red
+            Write-Host "Soki Code API startup diagnostics" -ForegroundColor Red
             if (Test-Path $apiErrorLog) {
                 Write-Host "--- api-error.log ---"
                 Get-Content -Path $apiErrorLog -Tail 100
@@ -157,17 +183,17 @@ try {
                 Write-Host "--- api.log ---"
                 Get-Content -Path $apiOutputLog -Tail 100
             }
-            throw "Soki Trade API failed to start after 30 seconds."
+            throw "Soki Code API failed to start after 30 seconds."
         }
     }
 
-    Write-Host "Starting Soki Trade"
+    Write-Host "Starting soki code"
     Write-Host "One terminal - one agent conversation - /setup for connections - /help for commands"
     Write-Host "Real candles download automatically. Live execution remains disabled."
     Start-Sleep -Milliseconds 400
 
     $env:PYTHONPATH = "packages/shared/src;apps/terminal-tui/src"
-    $terminalArguments = @("run", "python", "-m", "qforge_tui.main") + $args
+    $terminalArguments = @("run", "python", "-m", "qforge_tui.main") + $launcherArguments
     & $uvCommand.Source @terminalArguments
 }
 finally {

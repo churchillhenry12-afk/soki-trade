@@ -57,7 +57,7 @@ elif port_is_open "$api_port"; then
 fi
 
 if [[ "$api_reused" == "false" ]]; then
-  uv run uvicorn qforge_api.main:app --host 127.0.0.1 --port "$api_port" &
+  uv run uvicorn qforge_api.main:app --host 0.0.0.0 --port "$api_port" &
   api_pid=$!
   for _ in {1..200}; do
     is_soki_api "$api_port" && break
@@ -97,7 +97,8 @@ fi
 
 echo "  web      $desktop_url$([[ "$ui_reused" == "true" ]] && echo "  (already running)")"
 echo "  api      http://127.0.0.1:$api_port$([[ "$api_reused" == "true" ]] && echo "  (already running)")"
-echo "  mode     research + paper only"
+echo "  agent    local automation · guarded approvals"
+echo "  trading  research + paper only"
 echo ""
 
 if [[ -z "$api_pid" && -z "$ui_pid" ]]; then

@@ -11,8 +11,9 @@ tests, scores robustness, selects a portfolio, and applies immutable risk rules.
 This is research software, not financial advice. Live trading is disabled.
 
 Every agent request creates a durable completion contract and proof-ledger
-entry. General agent work runs on the authenticated Hermes Agent runtime when
-configured; deterministic research and immutable risk remain inside soki code.
+entry. General agent work runs on the authenticated Hermes Agent runtime that
+is installed and managed as part of Soki Code; deterministic research and
+immutable risk remain inside soki code.
 
 The product clients share one API and attachment pipeline:
 
@@ -25,7 +26,7 @@ The product clients share one API and attachment pipeline:
 | Integration | Production research implementation | Status |
 |---|---|---:|
 | Research engine | deterministic local planner and typed strategy generator | Ready |
-| Agent intelligence/chat | Hermes Agent HTTP runtime with session continuity and controlled model fallback | User-configured |
+| Agent intelligence/chat | bundled Hermes Agent HTTP runtime with server-side tools, session continuity, and controlled model fallback | Ready after model setup |
 | Proof Loop | durable tasks, checks, checkpoints, runtime evidence | Ready |
 | Market data | real Yahoo Finance candles with validated local CSV/Parquet override and cache | Ready |
 | Telegram | authenticated bot gateway with restricted-chat inbound polling | User-configured |
@@ -35,66 +36,59 @@ The product clients share one API and attachment pipeline:
 | Persistence | SQLite locally; PostgreSQL schema available | Yes/local |
 | Worker | in-process local orchestrator; Celery boundary available | Yes/local |
 
-## Requirements
+## One-product installation
 
-- Windows, macOS, or Linux
-- Git
-- [`uv`](https://docs.astral.sh/uv/)
-- Browser interface: Node.js 22+
-- Android development: Android Studio with SDK 36 and JDK 17 or newer
-- Docker is optional
-
-`uv` installs the required Python 3.12 runtime automatically. The terminal
-agent does not require Node.js, Docker, PostgreSQL, or Redis.
-
-## Install from GitHub
+The official installer installs Soki Code, the pinned Hermes automation
+runtime, Python, Node.js, browser tooling, and the desktop-control driver in one
+operation. Users do not install or launch Hermes separately.
 
 ### Windows
 
-Open PowerShell. Install Git if it is not already available, install `uv`, then
-clone and start soki code:
+Open PowerShell and run:
 
 ```powershell
-winget install --id Git.Git -e
-irm https://astral.sh/uv/install.ps1 | iex
-$env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
-git clone https://github.com/churchillhenry12-afk/soki-trade.git
-cd soki-trade
-.\soki.ps1
+irm https://raw.githubusercontent.com/churchillhenry12-afk/soki-trade/main/packaging/install.ps1 | iex
 ```
 
-Later launches only require:
+Then open a new PowerShell window and start the product:
 
 ```powershell
-cd soki-trade
-git pull
-.\soki.ps1
+soki-code
 ```
 
 ### macOS
 
-Open Terminal, install `uv`, then clone and start the terminal agent:
+Open Terminal and run:
 
 ```bash
-xcode-select -p >/dev/null 2>&1 || xcode-select --install
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$PATH"
-git clone https://github.com/churchillhenry12-afk/soki-trade.git
-cd soki-trade
-./soki terminal
+curl -fsSL https://raw.githubusercontent.com/churchillhenry12-afk/soki-trade/main/packaging/install.sh | bash
 ```
 
-Later launches only require:
+Then start the product:
 
 ```bash
-cd soki-trade
-git pull
-./soki terminal
+soki-code
 ```
 
-Windows and macOS both run the same FastAPI agent core, Hermes integration,
-proof ledger, research engine, attachments, and centered terminal interface.
-Platform-specific launchers are verified in GitHub Actions.
+`soki-code` opens the web interface. Use `soki-code terminal` for the terminal
+interface. Re-running the installer updates Soki and its pinned runtime while
+preserving user data. The uninstallers in `packaging/` remove both application
+components together and preserve data unless `SOKI_PURGE_DATA=1` is set.
+
+On macOS, Screen Recording and Accessibility consent must be approved in
+System Settings when prompted. Apple does not allow any installer to grant
+those permissions silently.
+
+Windows and macOS run the same API, bundled Hermes runtime, proof ledger,
+research engine, attachment pipeline, and user interfaces.
+
+## Source-development requirements
+
+- Windows, macOS, or Linux
+- Git and [`uv`](https://docs.astral.sh/uv/)
+- Browser interface: Node.js 22+
+- Android development: Android Studio with SDK 36 and JDK 17 or newer
+- Docker is optional
 
 ## Start the browser interface
 
@@ -107,7 +101,9 @@ make setup
 ./soki
 ```
 
-To enable the Hermes runtime, follow [the Hermes integration guide](docs/HERMES_INTEGRATION.md).
+The bundled Hermes runtime is enabled automatically. Choose and test an AI
+model in Soki settings; Soki securely synchronizes that verified model to its
+internal automation runtime.
 If the browser does not open automatically, use:
 
 - soki code: <http://127.0.0.1:5173>
@@ -143,12 +139,14 @@ make android-install
 ```
 
 `android-install` builds the app, forwards the phone's port 8000 to the laptop,
-and installs the APK. Keep `./soki` running. In the laptop interface, choose
+and upgrades the APK. Version `0.2.0` deliberately replaces the original test
+build that blocked local-network HTTP. Keep `./soki` running. In the laptop interface, choose
 **Pair phone**, keep `http://127.0.0.1:8000`, generate the QR, then scan it in
-the Android app. For a Wi-Fi connection instead of USB forwarding, expose the
-API through HTTPS and enter that HTTPS address before generating the code.
+the Android app. For a Wi-Fi connection, keep the phone and laptop on the same
+trusted network and scan the generated LAN QR. Soki exposes only its pairing
+claim and authenticated mobile routes on that network listener.
 
-For a symbol/timeframe without a local file, Soki Trade downloads real candles
+For a symbol/timeframe without a local file, Soki Code downloads real candles
 from Yahoo Finance, validates them, and maintains a 15-minute cache under
 `data/market/.cache/`. A matching user-supplied
 `data/market/SYMBOL_TIMEFRAME.csv` or Parquet file takes precedence. CSV files require
@@ -158,43 +156,13 @@ UTC-compatible timestamps and valid OHLC relationships.
 Check readiness at <http://127.0.0.1:8000/ready>. Network access is required
 only for the first download of a symbol/timeframe.
 
-## Release binaries
+## Terminal interface
 
-The latest verified Windows standalone release includes its own Python runtime:
-
-<https://github.com/churchillhenry12-afk/soki-trade/releases/latest/download/SokiTrade.exe>
-
-Download `SokiTrade.exe` and open it, or run it from PowerShell:
-
-```powershell
-.\SokiTrade.exe
-```
-
-Agent settings, gateway credentials, market data, and the local database are
-kept under `%LOCALAPPDATA%\SokiTrade`. The executable selects a free private
-localhost port automatically, so an existing application on port 8000 cannot
-prevent it from starting.
-
-For a fresh Windows machine, run this in PowerShell:
-
-```powershell
-irm https://github.com/churchillhenry12-afk/soki-trade/releases/latest/download/install.ps1 | iex
-```
-
-On macOS or Linux, the latest packaged release can be installed with:
-
-```bash
-curl -fsSL https://github.com/churchillhenry12-afk/soki-trade/releases/latest/download/install.sh | bash
-```
-
-Release binaries may lag the current `main` branch. Use the Git clone
-instructions above when you want the newest source.
-
-The native terminal interface is available with `./soki terminal`. Its compact
+The native terminal interface is available with `soki-code terminal`. Its compact
 Soki mark remains visible while you work.
 
 - `/setup` — connection center
-- `/hermes` — configure and verify the Hermes runtime
+- `/hermes` — inspect and verify the bundled automation runtime
 - `/connect telegram` / `/disconnect telegram` — manage Telegram in chat
 - `/connect mt5` / `/disconnect mt5` — manage the MT5 gateway in chat
 - `/model` — configure and test the fallback model
@@ -206,9 +174,9 @@ Soki mark remains visible while you work.
 - `/attach /path/to/file` — attach an image, video, audio file, or document
 - `/status`, `/help`, `/clear`, `/quit`
 
-On first launch, `./soki` installs Python dependencies when necessary. It starts
-the production API privately in the background and stops it when the terminal
-agent exits. The same command works on later launches.
+The installer prepares all dependencies. The terminal command starts the
+production API on the laptop and stops the process it owns when the terminal
+agent exits.
 
 Fallback model setup supports:
 
@@ -217,11 +185,14 @@ Fallback model setup supports:
 - Local OpenAI-compatible endpoints
 
 Choose the provider, enter its API key and base URL, then use **Scan available
-models**. Soki Trade requests the provider's live model catalog and lets you
+models**. Soki Code requests the provider's live model catalog and lets you
 select a returned model before running the response test. Provider settings,
 Telegram tokens, and gateway tokens can all be entered without leaving the
 terminal. Persisted credentials are Git-ignored, restricted to the current user
-with `0600` permissions, and never returned by the API.
+with user-only permissions, and never returned by the API.
+
+Hermes Agent is distributed under the MIT License. See
+[`packaging/THIRD_PARTY_NOTICES.md`](packaging/THIRD_PARTY_NOTICES.md).
 
 Ask the agent to connect MT5 and it will guide you to the verified REST or MCP
 gateway form. Broker account creation, terms, KYC, passkeys, and terminal login

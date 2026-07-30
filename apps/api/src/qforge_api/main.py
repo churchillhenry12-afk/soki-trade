@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import hashlib
+import ipaddress
 import json
 import mimetypes
 import re
 import secrets
+import socket
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from datetime import timedelta
@@ -32,7 +34,7 @@ from fastapi import (
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, SecretStr
 from qforge import __version__
 from qforge.agents import HermesAdapter, MockHermesAdapter, ProductionHermesAdapter
@@ -46,7 +48,15 @@ from qforge.gateways import (
     MT5Transport,
     TelegramConnection,
 )
-from qforge.hermes_runtime import HermesRuntimeClient, RuntimeAttachment, SokiAgentRuntime
+from qforge.hermes_runtime import (
+    HermesRuntimeClient,
+    RuntimeAttachment,
+    SokiAgentRuntime,
+    desktop_control_status,
+    discover_local_hermes,
+    enable_local_hermes,
+    sync_local_hermes_model,
+)
 from qforge.market_data import (
     MarketDataAdapter,
     MockMarketDataAdapter,
@@ -163,13 +173,16 @@ class AgentChatResponse(BaseModel):
         "CONNECTION_SETUP",
         "CONNECTION_CHANGED",
     ]
-    client_action: Literal[
-        "CONNECT_MODEL",
-        "CONNECT_HERMES",
-        "CONNECT_TELEGRAM",
-        "CONNECT_MT5",
-        "PAIR_PHONE",
-    ] | None = None
+    client_action: (
+        Literal[
+            "CONNECT_MODEL",
+            "CONNECT_HERMES",
+            "CONNECT_TELEGRAM",
+            "CONNECT_MT5",
+            "PAIR_PHONE",
+        ]
+        | None
+    ) = None
     experiment_id: UUID | None = None
     state: str | None = None
     session_id: str | None = None
@@ -213,12 +226,15 @@ class HermesConfigurationRequest(BaseModel):
 
 class PairingSessionRequest(BaseModel):
     api_base_url: str = Field(min_length=8, max_length=500)
+    prefer_lan: bool = True
 
 
 class PairingSessionResponse(BaseModel):
     pairing_id: UUID
     expires_at: str
     qr_payload: str
+    qr_payload_compact: str
+    api_base_url: str
 
 
 class PairingClaimRequest(BaseModel):
@@ -264,10 +280,24 @@ def _saved_hermes_configuration(settings: Settings) -> dict[str, str]:
     if not isinstance(payload, dict):
         return {}
     return {
-        key: str(payload.get(key, ""))
-        for key in ("url", "api_key", "model")
-        if payload.get(key)
+        key: str(payload.get(key, "")) for key in ("url", "api_key", "model") if payload.get(key)
     }
+
+
+def _persist_hermes_configuration(
+    settings: Settings,
+    *,
+    url: str,
+    api_key: str,
+    model: str,
+) -> None:
+    path = Path(settings.hermes_config_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"url": url, "api_key": api_key, "model": model}, indent=2),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
 
 
 @asynccontextmanager
@@ -279,6 +309,14 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     app.state.repository = repository
     app.state.model_router = model_router
     saved_hermes = _saved_hermes_configuration(settings)
+    if not saved_hermes and not settings.demo_mode:
+        local_hermes = discover_local_hermes()
+        if local_hermes["enabled"] == "true" and local_hermes["api_key"]:
+            saved_hermes = {
+                "url": local_hermes["url"],
+                "api_key": local_hermes["api_key"],
+                "model": "hermes-agent",
+            }
     hermes_runtime = HermesRuntimeClient(
         base_url=saved_hermes.get("url", settings.hermes_url),
         api_key=saved_hermes.get("api_key", settings.hermes_api_key),
@@ -352,6 +390,23 @@ app.add_middleware(
     allow_headers=["*"],
     allow_private_network=True,
 )
+
+
+@app.middleware("http")
+async def restrict_lan_control_surface(request: Request, call_next):  # type: ignore[no-untyped-def]
+    """Expose only the authenticated phone surface outside the local machine."""
+    host = request.client.host if request.client is not None else ""
+    try:
+        is_local = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_local = host in {"localhost", "testclient"}
+    mobile_path = request.url.path == "/pairing/claim" or request.url.path.startswith("/mobile/")
+    if not is_local and not mobile_path:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Only paired mobile devices can use this network listener."},
+        )
+    return await call_next(request)
 
 
 def _repository() -> Repository:
@@ -518,6 +573,32 @@ def _validated_api_base_url(value: str) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise HTTPException(status_code=422, detail="Enter a valid HTTP or HTTPS API URL.")
     return url
+
+
+def _lan_address() -> str | None:
+    """Best-effort active LAN address without sending network traffic."""
+    for target in (("192.0.2.1", 80), ("198.51.100.1", 80)):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+                probe.connect(target)
+                address = str(probe.getsockname()[0])
+            if not ipaddress.ip_address(address).is_loopback:
+                return address
+        except OSError:
+            continue
+    return None
+
+
+def _mobile_api_base_url(value: str, *, prefer_lan: bool) -> str:
+    url = _validated_api_base_url(value)
+    parsed = urlparse(url)
+    if not prefer_lan or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return url
+    address = _lan_address()
+    if not address:
+        return url
+    port = f":{parsed.port}" if parsed.port else ""
+    return f"{parsed.scheme}://{address}{port}"
 
 
 def _authenticated_device(authorization: str | None) -> dict[str, Any]:
@@ -885,6 +966,25 @@ async def test_model_connection() -> dict[str, str | bool]:
     app.state.model_connected = connected
     if not connected:
         raise HTTPException(status_code=502, detail="model returned an unexpected test response")
+    try:
+        synced = await sync_local_hermes_model(
+            model=router.configuration.model,
+            base_url=router.configuration.base_url,
+            api_key=router.configuration.api_key,
+        )
+        if synced:
+            runtime = _hermes_runtime()
+            local = discover_local_hermes()
+            runtime.base_url = local["url"]
+            runtime.api_key = local["api_key"]
+            runtime.model = "hermes-agent"
+            if not await runtime.verify_agent():
+                raise RuntimeError(runtime.last_error)
+    except (OSError, RuntimeError, TimeoutError) as error:
+        raise HTTPException(
+            status_code=502,
+            detail=f"The model works, but the Soki automation runtime could not use it: {error}",
+        ) from error
     return {**router.status(), "connected": True}
 
 
@@ -896,15 +996,25 @@ async def setup_status() -> dict[str, Any]:
     intelligence_ready = bool(app.state.model_connected) or _hermes_runtime().healthy
     market_ready = system.market_data.get("status") in {"READY", "MOCK"}
     core_ready = intelligence_ready and market_ready
+    hermes_status_payload = _hermes_runtime().status()
+    local_hermes = discover_local_hermes()
+    hermes_status_payload["local_installed"] = local_hermes["installed"] == "true"
+    hermes_status_payload["local_api_enabled"] = local_hermes["enabled"] == "true"
     return {
         "agent": {
             "name": "soki code",
             "ready": core_ready,
             "runtime": system.runtime,
-            "execution": "RESEARCH_AND_PAPER_ONLY",
+            "execution": (
+                "LOCAL_AUTOMATION_WITH_APPROVALS"
+                if _hermes_runtime().healthy
+                else "ADVICE_ONLY"
+            ),
+            "trading_execution": "RESEARCH_AND_PAPER_ONLY",
             "proof_loop": "ENABLED",
         },
-        "hermes": _hermes_runtime().status(),
+        "hermes": hermes_status_payload,
+        "desktop_control": await desktop_control_status(),
         "model": {**model, "connected": bool(app.state.model_connected)},
         "market_data": system.market_data,
         "telegram": gateways["telegram"],
@@ -930,37 +1040,65 @@ async def configure_hermes(
     runtime.api_key = payload.api_key.get_secret_value()
     runtime.model = payload.model.strip()
     if payload.persist:
-        path = Path(_settings().hermes_config_path)
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps(
-                    {
-                        "url": runtime.base_url,
-                        "api_key": runtime.api_key,
-                        "model": runtime.model,
-                    },
-                    indent=2,
-                ),
-                encoding="utf-8",
+            _persist_hermes_configuration(
+                _settings(),
+                url=runtime.base_url,
+                api_key=runtime.api_key,
+                model=runtime.model,
             )
-            path.chmod(0o600)
         except OSError as error:
             raise HTTPException(
                 status_code=500,
                 detail=f"Could not save the Hermes configuration: {error}",
             ) from error
-    await runtime.probe()
+    await runtime.verify_agent()
     if not runtime.healthy:
         raise HTTPException(status_code=502, detail=runtime.last_error)
     return runtime.status()
+
+
+@app.post("/hermes/local/enable", tags=["hermes"])
+async def enable_installed_hermes(request: Request) -> dict[str, Any]:
+    _require_local_request(request)
+    try:
+        model_configuration = _model_router().configuration
+        configuration = await enable_local_hermes(
+            model=model_configuration.model if not model_configuration.is_mock else "",
+            base_url=(
+                model_configuration.base_url if not model_configuration.is_mock else ""
+            ),
+            model_api_key=(
+                model_configuration.api_key if not model_configuration.is_mock else ""
+            ),
+        )
+        _persist_hermes_configuration(_settings(), **configuration)
+    except (OSError, RuntimeError, TimeoutError) as error:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not enable the installed Hermes Agent: {error}",
+        ) from error
+    runtime = _hermes_runtime()
+    runtime.base_url = configuration["url"]
+    runtime.api_key = configuration["api_key"]
+    runtime.model = configuration["model"]
+    for _ in range(30):
+        if await runtime.probe():
+            break
+        await asyncio.sleep(0.25)
+    if runtime.healthy and await runtime.verify_agent():
+        return runtime.status()
+    raise HTTPException(
+        status_code=502,
+        detail=f"Hermes was configured but did not become ready: {runtime.last_error}",
+    )
 
 
 @app.post("/hermes/test", tags=["hermes"])
 async def test_hermes(request: Request) -> dict[str, str | bool]:
     _require_local_request(request)
     runtime = _hermes_runtime()
-    if not await runtime.probe():
+    if not await runtime.verify_agent():
         raise HTTPException(status_code=502, detail=runtime.last_error)
     return runtime.status()
 
@@ -979,7 +1117,10 @@ async def create_pairing_session(
     pairing_id = uuid4()
     code = secrets.token_urlsafe(12)
     expires_at = utc_now() + timedelta(minutes=5)
-    api_base_url = _validated_api_base_url(payload.api_base_url)
+    api_base_url = _mobile_api_base_url(
+        payload.api_base_url,
+        prefer_lan=payload.prefer_lan,
+    )
     _repository().create_pairing_session(
         pairing_id=pairing_id,
         code_hash=_secret_hash(code),
@@ -991,11 +1132,23 @@ async def create_pairing_session(
     if api_base_url != "http://127.0.0.1:8000":
         encoded_url = base64.urlsafe_b64encode(api_base_url.encode()).decode().rstrip("=")
         qr_parts.append(encoded_url)
-    qr_payload = ":".join(qr_parts)
+    qr_payload_compact = ":".join(qr_parts)
+    qr_payload = json.dumps(
+        {
+            "v": 1,
+            "type": "soki-code-pairing",
+            "pairing_id": str(pairing_id),
+            "code": code,
+            "api_base_url": api_base_url,
+        },
+        separators=(",", ":"),
+    )
     return PairingSessionResponse(
         pairing_id=pairing_id,
         expires_at=expires_at.isoformat(),
         qr_payload=qr_payload,
+        qr_payload_compact=qr_payload_compact,
+        api_base_url=api_base_url,
     )
 
 
@@ -1121,9 +1274,7 @@ def _connection_status_response(
         telegram = gateways["telegram"]
         if telegram["connected"]:
             username = str(telegram.get("bot_username", "")).strip()
-            parts.append(
-                f"Telegram is connected{f' as @{username}' if username else ''}."
-            )
+            parts.append(f"Telegram is connected{f' as @{username}' if username else ''}.")
         else:
             parts.append(
                 "Telegram is not connected. Use Connect Telegram and enter a bot token "
@@ -1213,9 +1364,7 @@ async def _handle_agent_chat(
         and not wants_disconnect
     )
 
-    if wants_disconnect and (
-        "all connections" in lowered or "everything" in lowered
-    ):
+    if wants_disconnect and ("all connections" in lowered or "everything" in lowered):
         await _emit_activity(emit, "connections", "Removed saved gateway connections")
         _gateways().disconnect_telegram()
         _gateways().disconnect_mt5()
@@ -1444,6 +1593,7 @@ async def _handle_agent_chat(
             history=[item.model_dump() for item in request.history],
             session_id=request.session_id,
             attachments=attachments,
+            on_activity=emit,
         )
         reply = runtime_reply.text
         await _emit_activity(
@@ -1696,10 +1846,7 @@ async def upload_attachment(
 @app.get("/attachments", response_model=list[AttachmentResponse], tags=["attachments"])
 async def list_attachments(request: Request) -> list[AttachmentResponse]:
     _require_local_request(request)
-    return [
-        _attachment_response(item)
-        for item in _repository().list_attachments(owner="local")
-    ]
+    return [_attachment_response(item) for item in _repository().list_attachments(owner="local")]
 
 
 @app.get("/attachments/{attachment_id}", tags=["attachments"])
@@ -1736,7 +1883,13 @@ async def mobile_status(
         "agent": "soki code",
         "device": device,
         "hermes": _hermes_runtime().status(),
-        "execution": "RESEARCH_AND_PAPER_ONLY",
+        "desktop_control": await desktop_control_status(),
+        "execution": (
+            "LOCAL_AUTOMATION_WITH_APPROVALS"
+            if _hermes_runtime().healthy
+            else "ADVICE_ONLY"
+        ),
+        "trading_execution": "RESEARCH_AND_PAPER_ONLY",
     }
 
 

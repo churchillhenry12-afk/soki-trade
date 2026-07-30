@@ -76,10 +76,13 @@ export const api = {
 
   testHermes: () => request<HermesStatus>("/hermes/test", { method: "POST" }),
 
+  enableLocalHermes: () =>
+    request<HermesStatus>("/hermes/local/enable", { method: "POST" }),
+
   createPairing: (apiBaseUrl: string) =>
     request<PairingSession>("/pairing/sessions", {
       method: "POST",
-      body: JSON.stringify({ api_base_url: apiBaseUrl }),
+      body: JSON.stringify({ api_base_url: apiBaseUrl, prefer_lan: true }),
     }),
 
   pairingStatus: (pairingId: string) =>
